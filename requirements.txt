@@ -1,0 +1,29 @@
+# HLA Agent - High Level Architecture Agent
+# Python Dependencies
+
+# LLM Integration — Cloud Providers
+google-genai>=1.0.0          # Google Gemini (commercial)
+groq>=0.4.0                  # Groq Cloud (open-source models)
+openai>=1.0.0                # DeepSeek API (OpenAI-compatible)
+
+# LLM Integration — Local (optional)
+ollama>=0.4.0                # Ollama local inference
+
+# Web Server
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+websockets>=13.0
+
+# Data & Computation
+numpy>=1.26.0
+
+# Visualization
+matplotlib>=3.9.0
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
+
+# Utilities
+python-dotenv>=1.0.0
+
