@@ -1,0 +1,22 @@
+{
+  "project": "Online Task Management System",
+  "functional_requirements": [
+    { "id": "FR1", "description": "User can create projects and organize tasks" },
+    { "id": "FR2", "description": "User can assign tasks to team members with deadlines" },
+    { "id": "FR3", "description": "User can track task progress with status updates" },
+    { "id": "FR4", "description": "User can comment and collaborate on tasks" },
+    { "id": "FR5", "description": "System provides dashboard with project overview and analytics" },
+    { "id": "FR6", "description": "User can set priorities and labels for tasks" },
+    { "id": "FR7", "description": "System sends notifications for task assignments and deadlines" },
+    { "id": "FR8", "description": "Admin can manage teams and user permissions" },
+    { "id": "FR9", "description": "User can attach files and documents to tasks" },
+    { "id": "FR10", "description": "System supports task filtering sorting and search" }
+  ],
+  "non_functional_requirements": [
+    { "id": "NFR1", "type": "performance", "target": "dashboard loads within 300ms" },
+    { "id": "NFR2", "type": "scalability", "target": "support 10000 concurrent users across teams" },
+    { "id": "NFR3", "type": "availability", "target": "99.9% uptime with graceful degradation" },
+    { "id": "NFR4", "type": "security", "target": "role-based access control for all operations" },
+    { "id": "NFR5", "type": "maintainability", "target": "clean modular architecture for easy feature addition" }
+  ]
+}

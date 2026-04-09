@@ -1,0 +1,22 @@
+{
+  "project": "E-Commerce Platform",
+  "functional_requirements": [
+    { "id": "FR1", "description": "Customer can search and browse products by category" },
+    { "id": "FR2", "description": "Customer can add items to a shopping cart" },
+    { "id": "FR3", "description": "Customer can checkout and make payment" },
+    { "id": "FR4", "description": "Customer can track order shipment status" },
+    { "id": "FR5", "description": "Seller can list and manage products" },
+    { "id": "FR6", "description": "Seller can view sales analytics and reports" },
+    { "id": "FR7", "description": "System manages inventory and stock levels" },
+    { "id": "FR8", "description": "Admin can manage users sellers and disputes" },
+    { "id": "FR9", "description": "Customer can write product reviews and ratings" },
+    { "id": "FR10", "description": "System sends email notifications for orders and promotions" }
+  ],
+  "non_functional_requirements": [
+    { "id": "NFR1", "type": "scalability", "target": "handle 100000 concurrent users during flash sales" },
+    { "id": "NFR2", "type": "performance", "target": "product search returns results under 150ms" },
+    { "id": "NFR3", "type": "security", "target": "PCI-DSS compliance for payment processing" },
+    { "id": "NFR4", "type": "availability", "target": "99.95% uptime with zero downtime deployments" },
+    { "id": "NFR5", "type": "maintainability", "target": "modular architecture supporting independent service deployment" }
+  ]
+}

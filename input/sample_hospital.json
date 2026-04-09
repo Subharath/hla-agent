@@ -1,0 +1,22 @@
+{
+  "project": "Hospital Appointment Scheduling System",
+  "functional_requirements": [
+    { "id": "FR1", "description": "Patient can register and create a profile" },
+    { "id": "FR2", "description": "Patient can search for doctors by specialization" },
+    { "id": "FR3", "description": "Patient can book cancel and reschedule appointments" },
+    { "id": "FR4", "description": "Doctor can view and manage their appointment schedule" },
+    { "id": "FR5", "description": "Doctor can access patient medical history during consultation" },
+    { "id": "FR6", "description": "System sends appointment reminders via SMS and email" },
+    { "id": "FR7", "description": "Admin can manage doctors departments and schedules" },
+    { "id": "FR8", "description": "System generates reports on appointment statistics" },
+    { "id": "FR9", "description": "Patient can make online payment for consultation fees" },
+    { "id": "FR10", "description": "System manages prescription records and medical documents" }
+  ],
+  "non_functional_requirements": [
+    { "id": "NFR1", "type": "security", "target": "HIPAA compliant data protection for patient records" },
+    { "id": "NFR2", "type": "availability", "target": "99.99% uptime for critical appointment services" },
+    { "id": "NFR3", "type": "performance", "target": "appointment booking completes within 500ms" },
+    { "id": "NFR4", "type": "scalability", "target": "support 200 concurrent doctors and 5000 patients" },
+    { "id": "NFR5", "type": "reliability", "target": "no double-booking of appointment slots" }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "project": "Online Food Delivery System",
+  "functional_requirements": [
+    { "id": "FR1", "description": "Customer can browse restaurants and menus" },
+    { "id": "FR2", "description": "Customer can place an order with multiple items" },
+    { "id": "FR3", "description": "Customer can track delivery in real time on a map" },
+    { "id": "FR4", "description": "Restaurant can manage menu items and prices" },
+    { "id": "FR5", "description": "Restaurant can accept or reject incoming orders" },
+    { "id": "FR6", "description": "Driver can accept and complete deliveries" },
+    { "id": "FR7", "description": "System processes payments securely" },
+    { "id": "FR8", "description": "Admin can manage users and restaurants" },
+    { "id": "FR9", "description": "Customer can rate and review restaurants and drivers" },
+    { "id": "FR10", "description": "System sends notifications for order status changes" }
+  ],
+  "non_functional_requirements": [
+    { "id": "NFR1", "type": "scalability", "target": "support 50000 concurrent users" },
+    { "id": "NFR2", "type": "performance", "target": "response time under 200ms for API calls" },
+    { "id": "NFR3", "type": "security", "target": "all payments must be encrypted end-to-end" },
+    { "id": "NFR4", "type": "availability", "target": "99.9% uptime with failover support" },
+    { "id": "NFR5", "type": "reliability", "target": "zero data loss for order transactions" }
+  ]
+}
