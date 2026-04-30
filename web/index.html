@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HLA Agent — Architecture Evaluation Dashboard</title>
+    <meta name="description" content="High-Level Architecture Agent: Multi-LLM architecture generation and evaluation system">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+</head>
+<body>
+    <!-- ─── Navigation ─── -->
+    <nav class="navbar" id="navbar">
+        <div class="nav-brand">
+            <div class="brand-icon">⚡</div>
+            <div>
+                <h1 class="brand-title">HLA Agent</h1>
+                <p class="brand-sub">Architecture Evaluation System</p>
+            </div>
+        </div>
+        <div class="nav-links">
+            <a href="#input-section" class="nav-link active" data-section="input">Input</a>
+            <a href="#results-section" class="nav-link" data-section="results">Results</a>
+            <a href="#diagrams-section" class="nav-link" data-section="diagrams">Diagrams</a>
+            <a href="#history-section" class="nav-link" data-section="history">History</a>
+        </div>
+        <div class="nav-status" id="navStatus">
+            <span class="status-dot"></span>
+            <span class="status-text">Ready</span>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <!-- ─── Hero Section ─── -->
+        <section class="hero" id="hero">
+            <div class="hero-content">
+                <div class="hero-badge">Multi-LLM Architecture Search</div>
+                <h2 class="hero-title">Generate. Evaluate. <span class="gradient-text">Select.</span></h2>
+                <p class="hero-desc">Feed your requirements → 3 LLMs generate architectures → 5 metrics evaluate quality → Best architecture wins</p>
+                <div class="hero-stats">
+                    <div class="stat-card">
+                        <span class="stat-number" id="statModels">3</span>
+                        <span class="stat-label">LLM Models</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-number">5</span>
+                        <span class="stat-label">Metrics</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-number">6</span>
+                        <span class="stat-label">Outputs</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ─── Input Section ─── -->
+        <section class="section" id="input-section">
+            <div class="section-header">
+                <h2 class="section-title">📄 Requirements Input</h2>
+                <p class="section-desc">Load a sample or paste your FR/NFR JSON</p>
+            </div>
+
+            <div class="input-grid">
+                <!-- Sample Selector -->
+                <div class="card glass-card">
+                    <h3 class="card-title">📁 Sample Case Studies</h3>
+                    <div class="sample-grid" id="sampleGrid">
+                        <button class="sample-btn" data-file="sample_food_delivery.json">
+                            <span class="sample-icon">🍔</span>
+                            <span class="sample-name">Food Delivery</span>
+                        </button>
+                        <button class="sample-btn" data-file="sample_ecommerce.json">
+                            <span class="sample-icon">🛒</span>
+                            <span class="sample-name">E-Commerce</span>
+                        </button>
+                        <button class="sample-btn" data-file="sample_hospital.json">
+                            <span class="sample-icon">🏥</span>
+                            <span class="sample-name">Hospital</span>
+                        </button>
+                        <button class="sample-btn" data-file="sample_task_manager.json">
+                            <span class="sample-icon">📋</span>
+                            <span class="sample-name">Task Manager</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- JSON Editor -->
+                <div class="card glass-card editor-card">
+                    <div class="card-header-row">
+                        <h3 class="card-title">📝 JSON Editor</h3>
+                        <div class="editor-info" id="editorInfo"></div>
+                    </div>
+                    <textarea class="json-editor" id="jsonEditor" spellcheck="false"
+                        placeholder='{"project": "...", "functional_requirements": [...], "non_functional_requirements": [...]}'></textarea>
+                </div>
+            </div>
+
+            <!-- Model Selection & Run -->
+            <div class="run-panel card glass-card">
+                <div class="model-selector">
+                    <h3 class="card-title">🤖 Models</h3>
+                    <div class="model-checkboxes" id="modelCheckboxes">
+                        <!-- Populated dynamically from /api/health -->
+                    </div>
+                </div>
+                <button class="run-btn" id="runBtn" onclick="startPipeline()">
+                    <span class="run-icon">▶</span>
+                    <span>Run Pipeline</span>
+                </button>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="progress-section hidden" id="progressSection">
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+                <div class="progress-steps" id="progressSteps"></div>
+                <div class="progress-log" id="progressLog"></div>
+            </div>
+        </section>
+
+        <!-- ─── Results Section ─── -->
+        <section class="section hidden" id="results-section">
+            <div class="section-header">
+                <h2 class="section-title">📊 Evaluation Results</h2>
+                <p class="section-desc" id="resultsRunId"></p>
+            </div>
+
+            <!-- Winner Card -->
+            <div class="winner-card card" id="winnerCard">
+                <div class="winner-header">
+                    <span class="winner-trophy">🏆</span>
+                    <div>
+                        <h3 class="winner-title" id="winnerTitle">Winner</h3>
+                        <p class="winner-sub" id="winnerSub"></p>
+                    </div>
+                    <div class="winner-cas" id="winnerCAS">0.0000</div>
+                </div>
+                <div class="winner-metrics" id="winnerMetrics"></div>
+            </div>
+
+            <!-- Ranking Table -->
+            <div class="card glass-card">
+                <h3 class="card-title">📋 All Candidates</h3>
+                <div class="table-container">
+                    <table class="results-table" id="resultsTable">
+                        <thead>
+                            <tr>
+                                <th>Rank</th><th>Model</th><th>Style</th>
+                                <th>RCR</th><th>NAS</th><th>SMI</th><th>LSCS</th><th>SCI</th>
+                                <th>CAS</th><th>Verdict</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Radar Chart -->
+            <div class="card glass-card">
+                <h3 class="card-title">🎯 Radar Comparison</h3>
+                <div class="radar-container">
+                    <canvas id="radarChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Winner Components -->
+            <div class="card glass-card" id="componentsCard">
+                <h3 class="card-title">🧩 Winner Architecture — Components</h3>
+                <div class="components-grid" id="componentsGrid"></div>
+            </div>
+        </section>
+
+        <!-- ─── Diagrams Section ─── -->
+        <section class="section hidden" id="diagrams-section">
+            <div class="section-header">
+                <h2 class="section-title">📐 Architecture Diagrams</h2>
+            </div>
+            <div class="diagram-tabs">
+                <button class="tab-btn active" onclick="showDiagramTab('mermaid')">Mermaid</button>
+                <button class="tab-btn" onclick="showDiagramTab('plantuml')">PlantUML</button>
+            </div>
+            <div class="card glass-card">
+                <div id="mermaidDiagram" class="diagram-view"></div>
+                <pre id="plantumlDiagram" class="diagram-code hidden"></pre>
+            </div>
+        </section>
+
+        <!-- ─── History Section ─── -->
+        <section class="section hidden" id="history-section">
+            <div class="section-header">
+                <h2 class="section-title">📜 Run History</h2>
+            </div>
+            <div class="card glass-card">
+                <table class="results-table" id="historyTable">
+                    <thead>
+                        <tr><th>Run ID</th><th>Project</th><th>Timestamp</th><th>Candidates</th><th>Winner</th><th>CAS</th><th>Status</th></tr>
+                    </thead>
+                    <tbody id="historyBody"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>HLA Agent v1.0 — High-Level Architecture Generation & Evaluation System</p>
+        <p class="footer-sub" id="footerModels">Powered by LLMs via Ollama</p>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
