@@ -1,11 +1,14 @@
 """
 HLA Agent — SMI: Structural Modularity Index
 
-Formula: SMI = 1 - (inter_module_edges / total_edges)
+Overhauled to use Martin's Instability Metric.
+Formula per component: I = Ce / (Ca + Ce)
+Where:
+- Ca (Afferent Coupling) = incoming edges (Fan-in)
+- Ce (Efferent Coupling) = outgoing edges (Fan-out)
 
-Groups components by layer. For each interaction, checks if 'from'
-and 'to' components are in different layers (inter-module) or the
-same layer (intra-module). High inter-module ratio = low modularity.
+System SMI = 1 - Average(I)
+High SMI means highly modular/stable architecture. Low SMI means highly coupled/unstable.
 """
 
 import logging
@@ -13,24 +16,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _build_component_layer_map(architecture: dict) -> dict[str, str]:
-    """
-    Build a mapping: component_name → layer_name (lowercase).
-    """
-    comp_to_layer = {}
-    for comp in architecture.get("components", []):
-        name = comp.get("name", "").strip()
-        layer = comp.get("layer", "").strip().lower()
-        if name:
-            comp_to_layer[name] = layer
-            # Also store lowercase version for fuzzy matching
-            comp_to_layer[name.lower()] = layer
-    return comp_to_layer
-
-
 def compute_smi(architecture: dict) -> dict:
     """
-    Compute Structural Modularity Index.
+    Compute Structural Modularity Index using Martin's Instability.
 
     Args:
         architecture: Parsed architecture dict with 'components' and 'interactions'
@@ -38,66 +26,68 @@ def compute_smi(architecture: dict) -> dict:
     Returns:
         {
             "score": float (0.0 - 1.0),
-            "intra_module_edges": int,
-            "inter_module_edges": int,
-            "total_edges": int,
-            "edge_details": [{ from, to, from_layer, to_layer, type }]
+            "average_instability": float,
+            "total_components": int,
+            "component_details": [{ name, Ca, Ce, instability }]
         }
     """
+    components = architecture.get("components", [])
     interactions = architecture.get("interactions", [])
-    comp_to_layer = _build_component_layer_map(architecture)
 
-    if not interactions:
-        # No interactions = perfectly modular (trivially)
+    if not components:
         return {
             "score": 1.0,
-            "intra_module_edges": 0,
-            "inter_module_edges": 0,
-            "total_edges": 0,
-            "edge_details": [],
+            "average_instability": 0.0,
+            "total_components": 0,
+            "component_details": [],
         }
 
-    intra = 0
-    inter = 0
-    edge_details = []
+    # Initialize coupling counts
+    coupling = {comp.get("name", "").strip(): {"Ca": 0, "Ce": 0} for comp in components if comp.get("name")}
 
+    # Calculate Fan-in (Ca) and Fan-out (Ce)
     for interaction in interactions:
         from_comp = interaction.get("from", "").strip()
         to_comp = interaction.get("to", "").strip()
 
-        # Resolve layers
-        from_layer = comp_to_layer.get(from_comp, comp_to_layer.get(from_comp.lower(), "unknown"))
-        to_layer = comp_to_layer.get(to_comp, comp_to_layer.get(to_comp.lower(), "unknown"))
+        # Only count if the component is defined
+        if from_comp in coupling:
+            coupling[from_comp]["Ce"] += 1
+        if to_comp in coupling:
+            coupling[to_comp]["Ca"] += 1
 
-        is_cross_layer = from_layer != to_layer
+    details = []
+    total_instability = 0.0
+    valid_comps = 0
 
-        if is_cross_layer:
-            inter += 1
-        else:
-            intra += 1
+    for name, counts in coupling.items():
+        ca = counts["Ca"]
+        ce = counts["Ce"]
+        total_coupling = ca + ce
 
-        edge_details.append({
-            "from": from_comp,
-            "to": to_comp,
-            "from_layer": from_layer,
-            "to_layer": to_layer,
-            "cross_layer": is_cross_layer,
+        # If a component is completely isolated, it is perfectly stable (I = 0)
+        instability = (ce / total_coupling) if total_coupling > 0 else 0.0
+
+        details.append({
+            "name": name,
+            "Ca": ca,
+            "Ce": ce,
+            "instability": round(instability, 4)
         })
 
-    total = intra + inter
-    score = 1.0 - (inter / total) if total > 0 else 1.0
+        total_instability += instability
+        valid_comps += 1
 
-    # Clamp score to [0.0, 1.0]
-    score = max(0.0, min(1.0, score))
+    avg_instability = (total_instability / valid_comps) if valid_comps > 0 else 0.0
+    smi_score = 1.0 - avg_instability
 
     logger.info(
-        f"SMI: {score:.3f} | Intra: {intra}, Inter: {inter}, Total: {total}"
+        f"SMI: {smi_score:.3f} | Avg Instability: {avg_instability:.3f} | Components: {valid_comps}"
     )
 
     return {
-        "score": round(score, 4),
-        "intra_module_edges": intra,
-        "inter_module_edges": inter,
-        "total_edges": total,
-        "edge_details": edge_details,
+        "score": round(smi_score, 4),
+        "average_instability": round(avg_instability, 4),
+        "total_components": valid_comps,
+        "component_details": details,
     }

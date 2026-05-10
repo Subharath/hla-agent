@@ -1,7 +1,11 @@
 """
-HLA Agent — LSCS: Layer Separation Consistency Score
+HLA Agent — LSCS: Logical Structure Consistency Score
+(Formerly Layer Separation Consistency Score)
 
-Formula: LSCS = 1 - (layer_violations / total_cross_layer_edges)
+Style-Aware Topological Consistency:
+- Layered: Enforces strict downward dependency (no sinkholes/upward calls).
+- Microservices: Enforces Gateway usage and penalizes tight cyclic dependencies.
+- Event-Driven: Enforces broker mediation (producers don't call consumers directly).
 """
 
 import logging
@@ -28,17 +32,9 @@ def _build_comp_layer_map(architecture):
     return mapping
 
 
-def _detect_violations(architecture, interactions):
+def _detect_layered_violations(architecture, interactions, clm):
+    """Detect upward dependencies or layer bypassing in Layered style."""
     violations = []
-    clm = _build_comp_layer_map(architecture)
-    style = architecture.get("architecture_style", "").lower()
-
-    # Find gateway components for microservice bypass detection
-    gateways = set()
-    for c in architecture.get("components", []):
-        if any(k in c.get("name", "").lower() for k in ["gateway", "proxy", "router"]):
-            gateways.add(c["name"])
-
     for inter in interactions:
         fc = inter.get("from", "").strip()
         tc = inter.get("to", "").strip()
@@ -56,42 +52,107 @@ def _detect_violations(architecture, interactions):
                 "from": fc, "to": tc,
                 "reason": f"Upward dependency: {fc} (L{fo}) -> {tc} (L{to})"
             })
+    return violations
 
-        # Microservice gateway bypass
-        if "microservice" in style and fl.lower() in ("presentation", "ui", "frontend", "client"):
-            if tc not in gateways and tl.lower() in ("business logic", "business", "service"):
+
+def _detect_microservice_violations(architecture, interactions, clm):
+    """Detect gateway bypass and point-to-point cyclic coupling in Microservices."""
+    violations = []
+    gateways = set()
+    for c in architecture.get("components", []):
+        if any(k in c.get("name", "").lower() for k in ["gateway", "proxy", "router"]):
+            gateways.add(c["name"])
+
+    # Build adjacency list for cycle detection
+    adj = {}
+    for inter in interactions:
+        fc = inter.get("from", "").strip()
+        tc = inter.get("to", "").strip()
+        adj.setdefault(fc, []).append(tc)
+
+        # Check Gateway bypass
+        fl = clm.get(fc, clm.get(fc.lower(), ""))
+        tl = clm.get(tc, clm.get(tc.lower(), ""))
+        if fl.lower() in ("presentation", "ui", "frontend", "client"):
+            if tc not in gateways and gateways:
                 violations.append({
                     "from": fc, "to": tc,
-                    "reason": f"Gateway bypass: {fc} -> {tc}"
+                    "reason": f"Gateway bypass: UI directly calls internal service {tc}"
                 })
 
+    # Simple length-2 cycle detection (A -> B and B -> A)
+    for u in adj:
+        for v in adj[u]:
+            if u in adj.get(v, []):
+                violations.append({
+                    "from": u, "to": v,
+                    "reason": f"Cyclic dependency detected between {u} and {v}"
+                })
+
+    # Remove duplicates from cycle detection
+    return [dict(t) for t in {tuple(d.items()) for d in violations}]
+
+
+def _detect_event_driven_violations(architecture, interactions):
+    """Detect direct point-to-point calls bypassing brokers in Event-Driven."""
+    violations = []
+    brokers = set()
+    for c in architecture.get("components", []):
+        if any(k in c.get("name", "").lower() for k in ["bus", "broker", "queue", "topic", "kafka", "rabbitmq"]):
+            brokers.add(c["name"])
+
+    # If no brokers are defined but it's event-driven, that's a massive violation
+    if not brokers:
+        violations.append({
+            "from": "System", "to": "System",
+            "reason": "Event-Driven architecture missing an Event Broker/Bus"
+        })
+        return violations
+
+    for inter in interactions:
+        fc = inter.get("from", "").strip()
+        tc = inter.get("to", "").strip()
+        
+        # A direct call between non-broker services might be a violation
+        # We allow UI -> Gateway, but Service -> Service should usually go through Broker
+        # This is a heuristic.
+        is_fc_broker = fc in brokers or any(b in fc.lower() for b in ["bus", "broker", "queue"])
+        is_tc_broker = tc in brokers or any(b in tc.lower() for b in ["bus", "broker", "queue"])
+        is_fc_ui = any(k in fc.lower() for k in ["ui", "client", "frontend", "gateway"])
+
+        if not is_fc_broker and not is_tc_broker and not is_fc_ui:
+             violations.append({
+                "from": fc, "to": tc,
+                "reason": f"Direct point-to-point coupling: {fc} -> {tc} (bypasses broker)"
+            })
     return violations
 
 
 def compute_lscs(architecture):
     interactions = architecture.get("interactions", [])
     if not interactions:
-        return {"score": 1.0, "violations": 0, "total_cross_layer_edges": 0, "violation_details": []}
+        return {"score": 1.0, "violations": 0, "total_edges": 0, "violation_details": []}
 
     clm = _build_comp_layer_map(architecture)
-    cross = 0
-    for inter in interactions:
-        fc = inter.get("from", "").strip()
-        tc = inter.get("to", "").strip()
-        fl = clm.get(fc, clm.get(fc.lower(), "")).lower()
-        tl = clm.get(tc, clm.get(tc.lower(), "")).lower()
-        if fl and tl and fl != tl:
-            cross += 1
+    style = architecture.get("architecture_style", "").lower()
 
-    violations = _detect_violations(architecture, interactions)
+    if "microservice" in style:
+        violations = _detect_microservice_violations(architecture, interactions, clm)
+    elif "event" in style:
+        violations = _detect_event_driven_violations(architecture, interactions)
+    else:
+        # Default to Layered structural rules
+        violations = _detect_layered_violations(architecture, interactions, clm)
+
     nv = len(violations)
-    score = 1.0 - (nv / cross) if cross > 0 else 1.0
+    total_edges = len(interactions)
+    score = 1.0 - (nv / total_edges) if total_edges > 0 else 1.0
     score = max(0.0, min(1.0, score))
 
-    logger.info(f"LSCS: {score:.3f} | Violations: {nv}, Cross-layer: {cross}")
+    logger.info(f"LSCS: {score:.3f} | Style: {style} | Violations: {nv}, Total Edges: {total_edges}")
     return {
         "score": round(score, 4),
         "violations": nv,
-        "total_cross_layer_edges": cross,
+        "total_edges": total_edges,
         "violation_details": violations,
     }
