@@ -60,7 +60,7 @@ GENERATION_OPTIONS = {
 
 # Retry configuration
 MAX_GENERATION_RETRIES = 3
-MAX_REGENERATION_LOOPS = 3  # Max feedback-driven regeneration attempts
+MAX_REGENERATION_LOOPS = 0  # Disabled: using Human-in-the-Loop manual iteration
 
 # ──────────────────────────────────────────────
 # METRIC THRESHOLDS (minimum acceptable scores)

@@ -198,6 +198,62 @@ class SelectionRequest(BaseModel):
     scores: dict
     input_file_path: str = str(RESULTS_DIR / "_temp_input.json")
 
+class RegenerateRequest(BaseModel):
+    model: str
+    candidate_num: int
+    error: str
+
+@app.post("/api/runs/{run_id}/regenerate")
+async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
+    from generation.generator import regenerate_single
+    from prompt.builder import build_architecture_prompt
+    from main import parse_architecture, evaluate_architecture, ParseError
+    
+    path = RESULTS_DIR / "_temp_input.json"
+    with open(path, "r", encoding="utf-8") as f:
+        requirements = json.load(f)
+        
+    prompt = build_architecture_prompt(requirements)
+    
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None, lambda: regenerate_single(req.model, prompt, req.candidate_num, req.error)
+    )
+    
+    if not result.success:
+        return {
+            "success": False,
+            "candidate": {
+                "model": req.model, "candidate_num": req.candidate_num, "rank": -1,
+                "error": result.error or "Regeneration failed",
+                "scores": {"CAS": 0, "RCR": 0, "NAS": 0, "SMI": 0, "LSCS": 0, "SCI": 0, "verdict": "Failed"},
+                "architecture": {"architecture_style": "Failed", "components": []}
+            }
+        }
+        
+    try:
+        arch = parse_architecture(result.raw_text)
+        scores = evaluate_architecture(arch, requirements)
+        return {
+            "success": True,
+            "candidate": {
+                "model": req.model, "candidate_num": req.candidate_num, "rank": -1,
+                "architecture": arch,
+                "scores": scores,
+                "error": None
+            }
+        }
+    except ParseError as e:
+        return {
+            "success": False,
+            "candidate": {
+                "model": req.model, "candidate_num": req.candidate_num, "rank": -1,
+                "error": f"Parse Error: {e}",
+                "scores": {"CAS": 0, "RCR": 0, "NAS": 0, "SMI": 0, "LSCS": 0, "SCI": 0, "verdict": "Parse Failed"},
+                "architecture": {"architecture_style": "Unparseable", "components": []}
+            }
+        }
+
 
 @app.post("/api/runs/{run_id}/select")
 async def select_winner(run_id: str, req: SelectionRequest):

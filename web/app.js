@@ -282,40 +282,134 @@ function displayTradeoffPhase(data) {
     document.getElementById('componentsCard').classList.add('hidden');
     const tradeoffCard = document.getElementById('tradeoffCard');
     tradeoffCard.classList.remove('hidden');
+    
+    // Trivial Decision Logic
+    const isDominant = data.dominant_winner === true;
+    let headerHtml = `
+        <div class="card-header-row">
+            <h3 class="card-title">⚖️ ATAM Tradeoff Analysis</h3>
+            <div class="badge" style="background: rgba(234, 179, 8, 0.2); color: #facc15;">Action Required</div>
+        </div>
+        <p style="color: var(--text-muted); margin-bottom: 20px;">Review the generated candidates below. Analyze their architectural characteristics and select the best fit for your organizational context to proceed with diagram elaboration.</p>
+    `;
+
+    if (isDominant) {
+        headerHtml = `
+            <div class="card-header-row" style="background: rgba(16, 185, 129, 0.1); padding: 15px; border-radius: var(--radius-sm); border: 1px solid var(--success);">
+                <h3 class="card-title" style="color: var(--success); margin: 0;">🏆 ATAM Trivial Decision: Dominant Architecture Detected</h3>
+            </div>
+            <p style="color: var(--text-muted); margin: 15px 0 20px;">The top-ranked architecture clearly dominates the Utility Tree without significant tradeoff conflicts. It is mathematically recommended to proceed with this candidate.</p>
+        `;
+    }
+    
+    // Update Tradeoff Card Header
+    const tradeoffGrid = document.getElementById('tradeoffGrid');
+    tradeoffCard.innerHTML = headerHtml + '<div class="tradeoff-grid" id="tradeoffGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 20px;"></div>';
+
 
     // Show Radar image
     const radarImg = document.getElementById('radarImage');
     radarImg.src = data.radar_url;
     radarImg.style.display = 'block';
 
-    // Populate Tradeoff Grid
     const grid = document.getElementById('tradeoffGrid');
-    grid.innerHTML = '';
     
-    data.candidates.forEach(c => {
-        const s = c.scores;
-        grid.innerHTML += `
-            <div class="card glass-card" style="position: relative;">
-                <div class="badge" style="position: absolute; top: 10px; right: 10px;">Rank ${c.rank}</div>
-                <h4 style="margin-top: 0;">${c.model}</h4>
-                <p style="font-size: 0.9em; color: var(--text-muted);">${c.architecture.architecture_style}</p>
-                <div style="font-size: 1.5em; font-weight: 700; color: var(--primary); margin: 10px 0;">CAS: ${s.CAS.toFixed(4)}</div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.85em; margin-bottom: 15px;">
-                    <div>RCR: ${s.RCR.toFixed(2)}</div>
-                    <div>NAS: ${s.NAS.toFixed(2)}</div>
-                    <div>SMI: ${s.SMI.toFixed(2)}</div>
-                    <div>TCS (LSCS): ${s.LSCS.toFixed(2)}</div>
-                    <div>SCI: ${s.SCI.toFixed(2)}</div>
+    data.candidates.forEach((c, index) => {
+        const s = c.scores || {};
+        const isFailed = c.rank === -1;
+        const isTop = index === 0 && isDominant;
+        
+        // CSS classes for Dominant UI
+        const cardClass = isTop ? 'card glass-card dominant-card' : (isDominant ? 'card glass-card alternative-card' : 'card glass-card');
+        const glowStyle = isTop ? 'box-shadow: 0 0 20px rgba(16, 185, 129, 0.4); border-color: var(--success);' : '';
+        const rankBadge = isFailed ? '<div class="badge" style="background: rgba(239, 68, 68, 0.2); color: var(--danger); position: absolute; top: 10px; right: 10px;">Failed</div>' 
+                                   : `<div class="badge" style="position: absolute; top: 10px; right: 10px;">Rank ${c.rank}</div>`;
+        
+        let contentHtml = '';
+        if (isFailed) {
+            contentHtml = `
+                <div style="color: var(--danger); font-weight: bold; margin: 10px 0;">Error:</div>
+                <div style="font-size: 0.85em; color: var(--text-secondary); background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; margin-bottom: 15px;">
+                    ${c.error || "Generation Failed"}
                 </div>
-                <button class="run-btn" style="width: 100%; justify-content: center;" onclick="selectCandidate('${data.run_id}', ${data.candidates.indexOf(c)})">
-                    Select this Architecture
+                <button class="run-btn" style="width: 100%; justify-content: center; background: var(--bg-secondary); border: 1px solid var(--danger);" onclick="regenerateCandidate('${data.run_id}', ${index})">
+                    🔄 Regenerate (Manual)
                 </button>
+            `;
+        } else {
+            const prosCons = c.architecture.pros_and_cons || "No contextual analysis provided.";
+            contentHtml = `
+                <div style="font-size: 1.5em; font-weight: 700; color: var(--primary); margin: 10px 0;">Phase 1 CAS: ${s.CAS.toFixed(4)}</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.85em; margin-bottom: 15px; border-bottom: 1px solid var(--glass-border); padding-bottom: 10px;">
+                    <div><strong>RCR</strong> (Func): ${s.RCR.toFixed(2)}</div>
+                    <div><strong>NAS</strong> (NFR): ${s.NAS.toFixed(2)}</div>
+                </div>
+                <div style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 15px; font-style: italic; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 4px; border-left: 3px solid var(--accent-primary);">
+                    <strong>LLM Analysis:</strong><br>${prosCons}
+                </div>
+                <button class="run-btn" style="width: 100%; justify-content: center; ${isTop ? 'background: var(--success);' : ''}" onclick="selectCandidate('${data.run_id}', ${index})">
+                    ${isTop ? 'Accept Dominant Architecture' : 'Select this Architecture'}
+                </button>
+            `;
+        }
+
+        grid.innerHTML += `
+            <div class="${cardClass}" style="position: relative; ${glowStyle}">
+                ${rankBadge}
+                <h4 style="margin-top: 0; color: ${isFailed ? 'var(--danger)' : 'inherit'};">${c.model}</h4>
+                <p style="font-size: 0.9em; color: var(--text-muted);">${c.architecture.architecture_style || "Unknown Style"}</p>
+                ${contentHtml}
             </div>
         `;
     });
 
     // Populate Ranking Table (same as before)
     populateRankingTable(data.candidates);
+}
+
+// ─── Manual Regeneration ─────────────────────
+const manualIterations = {}; // Track iterations per candidate: { "run_id_cand_idx": count }
+
+async function regenerateCandidate(run_id, candidate_idx) {
+    const key = `${run_id}_${candidate_idx}`;
+    if (!manualIterations[key]) manualIterations[key] = 0;
+    
+    if (manualIterations[key] >= 2) {
+        alert("Maximum manual iterations (2) reached for this candidate to prevent hallucination drift.");
+        return;
+    }
+    
+    manualIterations[key]++;
+    updateStatus(`Regenerating (${manualIterations[key]}/2)...`, '#3B82F6');
+    
+    const candidate = currentResults.candidates[candidate_idx];
+    
+    try {
+        const res = await fetch(`/api/runs/${run_id}/regenerate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: candidate.model,
+                candidate_num: candidate.candidate_num,
+                error: candidate.error || "Please improve the architecture to pass threshold."
+            })
+        });
+        
+        if (!res.ok) throw new Error('Regeneration request failed');
+        const result = await res.json();
+        
+        // Update the current results object and re-render
+        currentResults.candidates[candidate_idx] = result.candidate;
+        
+        // Re-evaluate dominance if necessary (though usually we don't for regenerated candidates)
+        // Just re-render Phase 1
+        displayTradeoffPhase(currentResults);
+        updateStatus('Pending Selection', '#FACC15');
+        
+    } catch (err) {
+        updateStatus('Regeneration Error', '#EF4444');
+        alert("Regeneration failed: " + err.message);
+    }
 }
 
 // ─── Select Candidate (Phase 2 trigger) ──────

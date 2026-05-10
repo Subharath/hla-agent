@@ -60,6 +60,7 @@ The JSON MUST follow this EXACT schema:
 
 {
   "architecture_style": "<one of: Layered Architecture, Event-Driven Architecture, Microkernel Architecture, Microservices Architecture, Space-Based Architecture>",
+  "pros_and_cons": "<2-3 sentence expert explanation of why this architecture is a good or bad fit for this SPECIFIC scenario, outlining its ATAM tradeoffs>",
   "layers": [
     {
       "name": "<layer name>",

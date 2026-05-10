@@ -89,6 +89,14 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
 
     for c in candidates:
         if not c.success:
+            all_candidates.append({
+                "model": c.model,
+                "candidate_num": c.candidate_num,
+                "raw_text": c.raw_text,
+                "error": c.error or "Generation Failed",
+                "scores": {"CAS": 0, "RCR": 0, "NAS": 0, "SMI": 0, "LSCS": 0, "SCI": 0, "verdict": "Failed"},
+                "architecture": {"architecture_style": "Failed", "components": []}
+            })
             continue
         try:
             arch = parse_architecture(c.raw_text)
@@ -99,17 +107,34 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
                 "raw_text": c.raw_text,
                 "architecture": arch,
                 "scores": scores,
+                "error": None
             })
         except ParseError as e:
             logger.warning(f"Skipping unparseable candidate: {e}")
+            all_candidates.append({
+                "model": c.model,
+                "candidate_num": c.candidate_num,
+                "raw_text": c.raw_text,
+                "error": f"Parse Error: {e}",
+                "scores": {"CAS": 0, "RCR": 0, "NAS": 0, "SMI": 0, "LSCS": 0, "SCI": 0, "verdict": "Parse Failed"},
+                "architecture": {"architecture_style": "Unparseable", "components": []}
+            })
 
-    if not all_candidates:
+    # Only rank candidates that actually parsed successfully
+    valid_candidates = [c for c in all_candidates if c.get("error") is None]
+    failed_candidates = [c for c in all_candidates if c.get("error") is not None]
+    
+    if not valid_candidates and not failed_candidates:
         update_run(run_id, status="failed")
         raise RuntimeError("No valid architecture candidates produced")
 
-    # Rank
-    notify("rank", "Ranking candidates...")
-    ranked = rank_candidates(all_candidates)
+    notify("ranking", "Ranking candidates...")
+    ranked_valid = rank_candidates(valid_candidates)
+    
+    # Append failed candidates at the bottom with rank -1
+    for fc in failed_candidates:
+        fc["rank"] = -1
+    ranked = ranked_valid + failed_candidates
 
     # Log to DB and set to pending_selection
     for c in ranked:
@@ -119,9 +144,21 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
     
     update_run(run_id, status="pending_selection", total_candidates=len(ranked))
     
-    # Generate the group radar chart for the UI to use in Phase 2
+    # Generate the group radar chart for the UI to use in Phase 1
     radar_path = RESULTS_DIR / "radar_chart.png"
-    generate_radar_chart(ranked, str(radar_path), f"{project} — Tradeoff Comparison")
+    if ranked_valid:
+        generate_radar_chart(ranked_valid, str(radar_path), f"{project} — Tradeoff Comparison")
+
+    # ATAM Trivial Decision Logic (Dominance Detection)
+    dominant_winner = False
+    if len(ranked_valid) >= 2:
+        top_cas = ranked_valid[0]["scores"].get("CAS", 0)
+        second_cas = ranked_valid[1]["scores"].get("CAS", 0)
+        if top_cas >= 0.90 and (top_cas - second_cas) >= 0.10:
+            dominant_winner = True
+    elif len(ranked_valid) == 1:
+        if ranked_valid[0]["scores"].get("CAS", 0) >= 0.90:
+            dominant_winner = True
 
     notify("done", "Phase 1 complete. Pending human selection.")
     logger.info(f"Phase 1 complete! Pending selection for Run ID: {run_id}")
@@ -129,7 +166,8 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
     return {
         "run_id": run_id,
         "ranked_candidates": ranked,
-        "radar": str(radar_path)
+        "radar": str(radar_path) if ranked_valid else None,
+        "dominant_winner": dominant_winner
     }
 
 

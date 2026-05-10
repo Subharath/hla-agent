@@ -191,6 +191,22 @@ body {
 .card-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
 .card-header-row { display: flex; justify-content: space-between; align-items: center; }
 
+/* ─── Dominant UI ─── */
+.dominant-card {
+    transform: scale(1.02);
+    z-index: 10;
+}
+.alternative-card {
+    opacity: 0.6;
+    transform: scale(0.95);
+    filter: grayscale(0.5);
+}
+.alternative-card:hover {
+    opacity: 1;
+    transform: scale(1);
+    filter: grayscale(0);
+}
+
 /* ─── Input Grid ─── */
 .input-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
 
