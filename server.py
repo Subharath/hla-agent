@@ -190,23 +190,26 @@ async def websocket_pipeline(ws: WebSocket):
 
 
 from pydantic import BaseModel
+
 class SelectionRequest(BaseModel):
-    candidate_id: int
+    """User selection of a candidate for Phase 2 elaboration."""
+    model: str
+    architecture: dict
+    scores: dict
     input_file_path: str = str(RESULTS_DIR / "_temp_input.json")
 
 
 @app.post("/api/runs/{run_id}/select")
 async def select_winner(run_id: str, req: SelectionRequest):
+    """Phase 2: Elaborate the selected winner candidate."""
     from main import elaborate_winner
-    from storage.db import get_candidate
     
-    candidate = get_candidate(req.candidate_id)
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-        
-    # Re-parse JSON strings from DB
-    candidate["architecture"] = json.loads(candidate["architecture_json"])
-    candidate["scores"] = {"CAS": candidate["cas"], "RCR": candidate["rcr"], "NAS": candidate["nas"], "SMI": candidate["smi"], "LSCS": candidate["lscs"], "SCI": candidate["sci"]}
+    # Build candidate object from request
+    candidate = {
+        "model": req.model,
+        "architecture": req.architecture,
+        "scores": req.scores,
+    }
     
     try:
         loop = asyncio.get_event_loop()

@@ -307,7 +307,7 @@ function displayTradeoffPhase(data) {
                     <div>TCS (LSCS): ${s.LSCS.toFixed(2)}</div>
                     <div>SCI: ${s.SCI.toFixed(2)}</div>
                 </div>
-                <button class="run-btn" style="width: 100%; justify-content: center;" onclick="selectCandidate('${data.run_id}', ${c.id})">
+                <button class="run-btn" style="width: 100%; justify-content: center;" onclick="selectCandidate('${data.run_id}', ${data.candidates.indexOf(c)})">
                     Select this Architecture
                 </button>
             </div>
@@ -319,17 +319,26 @@ function displayTradeoffPhase(data) {
 }
 
 // ─── Select Candidate (Phase 2 trigger) ──────
-async function selectCandidate(run_id, candidate_id) {
+async function selectCandidate(run_id, candidate_idx) {
     updateStatus('Elaborating...', '#3B82F6');
     document.getElementById('tradeoffCard').classList.add('hidden');
     document.getElementById('progressSection').classList.remove('hidden');
-    updateProgress(50, `Elaborating selected candidate (ID: ${candidate_id})...`);
+    updateProgress(50, `Elaborating selected candidate...`);
 
     try {
+        const candidate = currentResults.candidates[candidate_idx];
+        if (!candidate) {
+            throw new Error('Candidate not found in results');
+        }
+        
         const res = await fetch(`/api/runs/${run_id}/select`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ candidate_id: candidate_id })
+            body: JSON.stringify({
+                model: candidate.model,
+                architecture: candidate.architecture,
+                scores: candidate.scores
+            })
         });
         
         if (!res.ok) throw new Error('Failed to elaborate architecture');

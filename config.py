@@ -46,7 +46,8 @@ PROVIDER_MODELS = {
 }
 
 # Active models (Cross-provider comparison)
-MODELS = ["qwen3", "deepseek-v4-flash"]
+# Using local Ollama for testing: llama3.1, mistral, qwen3
+MODELS = ["llama3.1", "mistral", "qwen3"]
 
 # Number of architecture candidates each model generates
 CANDIDATES_PER_MODEL = 2

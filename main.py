@@ -113,8 +113,9 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
 
     # Log to DB and set to pending_selection
     for c in ranked:
-        insert_candidate(run_id, c["model"], c["candidate_num"],
+        db_id = insert_candidate(run_id, c["model"], c["candidate_num"],
                          c["architecture"], c["scores"], c["rank"])
+        c["id"] = db_id  # Store DB ID for Phase 2 retrieval
     
     update_run(run_id, status="pending_selection", total_candidates=len(ranked))
     
@@ -145,6 +146,9 @@ def elaborate_winner(run_id: str, selected_candidate: dict, input_file: str | Pa
     project = requirements.get("project", "Unknown")
 
     notify("output", "Generating final artifacts...")
+
+    # Ensure rank is set (selected candidate is the winner)
+    selected_candidate["rank"] = selected_candidate.get("rank", 1)
 
     winner_path = RESULTS_DIR / "winner.json"
     with open(winner_path, "w", encoding="utf-8") as f:

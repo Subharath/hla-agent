@@ -84,9 +84,9 @@ def update_run(run_id: str, **kwargs):
 
 def insert_candidate(run_id: str, model: str, candidate_num: int,
                      architecture: dict, scores: dict, rank: int):
-    """Insert a scored candidate into the database."""
+    """Insert a scored candidate into the database. Returns the row ID."""
     conn = _get_connection()
-    conn.execute("""
+    cursor = conn.execute("""
         INSERT INTO candidates
         (run_id, model, candidate_num, architecture_style, architecture_json,
          rcr, nas, smi, lscs, sci, cas, verdict, rank)
@@ -100,7 +100,9 @@ def insert_candidate(run_id: str, model: str, candidate_num: int,
         scores.get("verdict", ""), rank,
     ))
     conn.commit()
+    row_id = cursor.lastrowid
     conn.close()
+    return row_id
 
 
 def get_run(run_id: str) -> dict:
