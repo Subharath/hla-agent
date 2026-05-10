@@ -130,12 +130,25 @@
                 <p class="section-desc" id="resultsRunId"></p>
             </div>
 
-            <!-- Winner Card -->
-            <div class="winner-card card" id="winnerCard">
+            <!-- Tradeoff Selection Panel (Phase 1 Complete) -->
+            <div class="card glass-card hidden" id="tradeoffCard" style="border: 2px solid var(--primary);">
+                <div class="card-header-row">
+                    <h3 class="card-title">⚖️ ATAM Tradeoff Analysis</h3>
+                    <div class="badge" style="background: rgba(234, 179, 8, 0.2); color: #facc15;">Action Required</div>
+                </div>
+                <p style="color: var(--text-muted); margin-bottom: 20px;">Review the generated candidates below. Analyze their architectural characteristics and select the best fit for your organizational context to proceed with diagram elaboration.</p>
+                
+                <div class="tradeoff-grid" id="tradeoffGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 20px;">
+                    <!-- Populated dynamically by JS -->
+                </div>
+            </div>
+
+            <!-- Winner Card (Phase 2 Complete) -->
+            <div class="winner-card card hidden" id="winnerCard">
                 <div class="winner-header">
                     <span class="winner-trophy">🏆</span>
                     <div>
-                        <h3 class="winner-title" id="winnerTitle">Winner</h3>
+                        <h3 class="winner-title" id="winnerTitle">Selected Architecture</h3>
                         <p class="winner-sub" id="winnerSub"></p>
                     </div>
                     <div class="winner-cas" id="winnerCAS">0.0000</div>
@@ -162,9 +175,10 @@
 
             <!-- Radar Chart -->
             <div class="card glass-card">
-                <h3 class="card-title">🎯 Radar Comparison</h3>
+                <h3 class="card-title">🎯 Tradeoff Radar Comparison</h3>
                 <div class="radar-container">
-                    <canvas id="radarChart"></canvas>
+                    <img id="radarImage" src="" alt="Radar Chart" style="max-width: 100%; display: none; border-radius: 8px;">
+                    <canvas id="radarChart" style="display: none;"></canvas>
                 </div>
             </div>
 

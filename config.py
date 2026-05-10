@@ -39,14 +39,14 @@ OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
 # Models per provider
 PROVIDER_MODELS = {
-    "groq": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
-    "deepseek": ["deepseek-chat"],
+    "groq": ["llama-3.3-70b-versatile"],
+    "deepseek": ["deepseek-v4-flash", "deepseek-v4-pro"],
     "gemini": ["gemini-2.0-flash"],
     "ollama": ["llama3.1", "mistral", "qwen3"],
 }
 
-# Active models (determined by provider)
-MODELS = PROVIDER_MODELS.get(LLM_PROVIDER, PROVIDER_MODELS["gemini"])
+# Active models (Cross-provider comparison)
+MODELS = ["qwen3", "deepseek-v4-flash"]
 
 # Number of architecture candidates each model generates
 CANDIDATES_PER_MODEL = 2

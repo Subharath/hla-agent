@@ -151,20 +151,16 @@ async def websocket_pipeline(ws: WebSocket):
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(requirements, f)
 
-        # Run pipeline in thread to not block
-        from main import run_pipeline
+        # Run pipeline Phase 1 in thread to not block
+        from main import generate_and_rank
 
-        def progress_cb(step, msg, extra=None):
-            # Can't await in sync callback, so we use a simple approach
-            pass
-
-        await ws.send_json({"type": "status", "step": "start", "message": "Pipeline starting..."})
+        await ws.send_json({"type": "status", "step": "start", "message": "Phase 1 starting..."})
 
         # Run in executor
         loop = asyncio.get_event_loop()
         try:
             result = await loop.run_in_executor(
-                None, lambda: run_pipeline(str(temp_path), models=selected_models)
+                None, lambda: generate_and_rank(str(temp_path), models=selected_models)
             )
 
             # Build response
@@ -175,18 +171,14 @@ async def websocket_pipeline(ws: WebSocket):
                     "candidate_num": c["candidate_num"],
                     "scores": c["scores"],
                     "architecture": c["architecture"],
+                    "id": c.get("id", None) # if we need db id later
                 })
 
             await ws.send_json({
-                "type": "complete",
+                "type": "phase1_complete",
                 "run_id": result["run_id"],
                 "candidates": ranked_data,
-                "winner": {
-                    "model": result["winner"]["model"],
-                    "scores": result["winner"]["scores"],
-                    "architecture": result["winner"]["architecture"],
-                },
-                "outputs": result["outputs"],
+                "radar_url": f"/api/results/{result['run_id']}/radar"
             })
         except Exception as e:
             await ws.send_json({"type": "error", "message": str(e)})
@@ -195,6 +187,44 @@ async def websocket_pipeline(ws: WebSocket):
         logger.info("Client disconnected")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
+
+
+from pydantic import BaseModel
+class SelectionRequest(BaseModel):
+    candidate_id: int
+    input_file_path: str = str(RESULTS_DIR / "_temp_input.json")
+
+
+@app.post("/api/runs/{run_id}/select")
+async def select_winner(run_id: str, req: SelectionRequest):
+    from main import elaborate_winner
+    from storage.db import get_candidate
+    
+    candidate = get_candidate(req.candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+        
+    # Re-parse JSON strings from DB
+    candidate["architecture"] = json.loads(candidate["architecture_json"])
+    candidate["scores"] = {"CAS": candidate["cas"], "RCR": candidate["rcr"], "NAS": candidate["nas"], "SMI": candidate["smi"], "LSCS": candidate["lscs"], "SCI": candidate["sci"]}
+    
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, lambda: elaborate_winner(run_id, candidate, req.input_file_path)
+        )
+        return {
+            "status": "success",
+            "outputs": result["outputs"],
+            "winner": {
+                "model": result["winner"]["model"],
+                "scores": result["winner"]["scores"],
+                "architecture": result["winner"]["architecture"]
+            }
+        }
+    except Exception as e:
+        logger.error(f"Elaboration failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

@@ -59,9 +59,9 @@ def init_db():
     logger.info(f"Database initialized at {DB_PATH}")
 
 
-def create_run(project: str, input_json: dict) -> str:
+def create_run(project: str, input_json: dict, run_id: str = None) -> str:
     """Create a new run entry. Returns run_id."""
-    run_id = str(uuid.uuid4())[:8]
+    run_id = run_id or str(uuid.uuid4())[:8]
     conn = _get_connection()
     conn.execute(
         "INSERT INTO runs (run_id, timestamp, project, input_json) VALUES (?, ?, ?, ?)",
@@ -129,6 +129,14 @@ def get_all_runs() -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_candidate(candidate_id: int) -> dict:
+    """Get a single candidate by its ID."""
+    conn = _get_connection()
+    row = conn.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 # Initialize DB on import

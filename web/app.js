@@ -123,8 +123,8 @@ function getModelDisplayName(model) {
         'llama-3.3-70b-versatile': 'LLaMA 3.3 70B',
         'mixtral-8x7b-32768': 'Mixtral 8x7B',
         // DeepSeek models
-        'deepseek-chat': 'DeepSeek V3',
-        'deepseek-reasoner': 'DeepSeek R1',
+        'deepseek-v4-flash': 'DeepSeek V4 Flash',
+        'deepseek-v4-pro': 'DeepSeek V4 Pro',
         // Gemini models
         'gemini-2.0-flash': 'Gemini 2.0 Flash',
         'gemini-2.0-flash-lite': 'Gemini 2.0 Flash Lite',
@@ -211,10 +211,20 @@ function startPipeline() {
             updateProgress(stepProgress[data.step] || 50, data.message);
         }
 
-        if (data.type === 'complete') {
-            updateProgress(100, '✅ Pipeline complete!');
+        if (data.type === 'phase1_complete') {
+            updateProgress(100, '⚖️ Phase 1 complete. Pending human selection.');
             currentResults = data;
-            displayResults(data);
+            displayTradeoffPhase(data);
+            updateStatus('Pending Selection', '#FACC15');
+            resetRunButton();
+            showSection('results');
+            loadHistory();
+        }
+
+        if (data.type === 'complete') {
+            updateProgress(100, '✅ Elaboration complete!');
+            currentResults = data;
+            displayFinalWinner(data);
             updateStatus('Complete', '#10B981');
             resetRunButton();
             showSection('results');
@@ -259,12 +269,90 @@ function updateStatus(text, color) {
     status.querySelector('.status-dot').style.background = color;
 }
 
-// ─── Display Results ─────────────────────────
-function displayResults(data) {
+// ─── Display Tradeoff Phase (Phase 1) ────────
+function displayTradeoffPhase(data) {
     const resultsSection = document.getElementById('results-section');
     resultsSection.classList.remove('hidden');
+    document.getElementById('diagrams-section').classList.add('hidden');
 
-    document.getElementById('resultsRunId').textContent = `Run ID: ${data.run_id}`;
+    document.getElementById('resultsRunId').textContent = `Run ID: ${data.run_id} — Pending ATAM Tradeoff Selection`;
+    
+    // Hide winner card, show tradeoff card
+    document.getElementById('winnerCard').classList.add('hidden');
+    document.getElementById('componentsCard').classList.add('hidden');
+    const tradeoffCard = document.getElementById('tradeoffCard');
+    tradeoffCard.classList.remove('hidden');
+
+    // Show Radar image
+    const radarImg = document.getElementById('radarImage');
+    radarImg.src = data.radar_url;
+    radarImg.style.display = 'block';
+
+    // Populate Tradeoff Grid
+    const grid = document.getElementById('tradeoffGrid');
+    grid.innerHTML = '';
+    
+    data.candidates.forEach(c => {
+        const s = c.scores;
+        grid.innerHTML += `
+            <div class="card glass-card" style="position: relative;">
+                <div class="badge" style="position: absolute; top: 10px; right: 10px;">Rank ${c.rank}</div>
+                <h4 style="margin-top: 0;">${c.model}</h4>
+                <p style="font-size: 0.9em; color: var(--text-muted);">${c.architecture.architecture_style}</p>
+                <div style="font-size: 1.5em; font-weight: 700; color: var(--primary); margin: 10px 0;">CAS: ${s.CAS.toFixed(4)}</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.85em; margin-bottom: 15px;">
+                    <div>RCR: ${s.RCR.toFixed(2)}</div>
+                    <div>NAS: ${s.NAS.toFixed(2)}</div>
+                    <div>SMI: ${s.SMI.toFixed(2)}</div>
+                    <div>TCS (LSCS): ${s.LSCS.toFixed(2)}</div>
+                    <div>SCI: ${s.SCI.toFixed(2)}</div>
+                </div>
+                <button class="run-btn" style="width: 100%; justify-content: center;" onclick="selectCandidate('${data.run_id}', ${c.id})">
+                    Select this Architecture
+                </button>
+            </div>
+        `;
+    });
+
+    // Populate Ranking Table (same as before)
+    populateRankingTable(data.candidates);
+}
+
+// ─── Select Candidate (Phase 2 trigger) ──────
+async function selectCandidate(run_id, candidate_id) {
+    updateStatus('Elaborating...', '#3B82F6');
+    document.getElementById('tradeoffCard').classList.add('hidden');
+    document.getElementById('progressSection').classList.remove('hidden');
+    updateProgress(50, `Elaborating selected candidate (ID: ${candidate_id})...`);
+
+    try {
+        const res = await fetch(`/api/runs/${run_id}/select`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ candidate_id: candidate_id })
+        });
+        
+        if (!res.ok) throw new Error('Failed to elaborate architecture');
+        const result = await res.json();
+        
+        updateProgress(100, '✅ Elaboration complete!');
+        updateStatus('Complete', '#10B981');
+        
+        // Hide tradeoff, show winner
+        displayFinalWinner(result);
+        
+    } catch (err) {
+        updateProgress(0, `❌ Error: ${err.message}`);
+        updateStatus('Error', '#EF4444');
+    }
+}
+
+// ─── Display Final Winner (Phase 2) ────────
+function displayFinalWinner(data) {
+    document.getElementById('tradeoffCard').classList.add('hidden');
+    document.getElementById('winnerCard').classList.remove('hidden');
+    document.getElementById('componentsCard').classList.remove('hidden');
+    document.getElementById('diagrams-section').classList.remove('hidden');
 
     // Winner card
     const winner = data.winner;
@@ -280,18 +368,30 @@ function displayResults(data) {
         const val = ws[metric] || 0;
         const colorClass = val >= 0.8 ? 'score-high' : val >= 0.6 ? 'score-mid' : 'score-low';
         const barColor = val >= 0.8 ? '#10B981' : val >= 0.6 ? '#F59E0B' : '#EF4444';
+        
+        // Rename LSCS to TCS for UI display to reflect style-awareness
+        const displayName = metric === 'LSCS' ? 'TCS' : metric;
+        
         metricsDiv.innerHTML += `
             <div class="metric-card fade-in">
-                <div class="metric-name">${metric}</div>
+                <div class="metric-name" title="${metric}">${displayName}</div>
                 <div class="metric-value ${colorClass}">${val.toFixed(2)}</div>
                 <div class="metric-bar"><div class="metric-bar-fill" style="width:${val*100}%;background:${barColor}"></div></div>
             </div>`;
     });
 
-    // Ranking table
+    renderComponents(winner.architecture.components);
+    
+    // Auto-switch to diagrams
+    if (data.outputs) {
+        loadDiagrams(data);
+    }
+}
+
+function populateRankingTable(candidates) {
     const tbody = document.getElementById('resultsBody');
     tbody.innerHTML = '';
-    data.candidates.forEach(c => {
+    candidates.forEach(c => {
         const s = c.scores;
         const rankClass = c.rank <= 3 ? `rank-${c.rank}` : '';
         const verdictClass = s.verdict === 'Accepted' ? 'verdict-accepted' : s.verdict === 'Marginal' ? 'verdict-marginal' : 'verdict-poor';
@@ -299,25 +399,24 @@ function displayResults(data) {
 
         tbody.innerHTML += `<tr>
             <td><span class="rank-badge ${rankClass}">${c.rank}</span></td>
-            <td>${c.model}</td>
+            <td><strong>${c.model}</strong><br><small>Cand #${c.candidate_num}</small></td>
             <td>${c.architecture.architecture_style}</td>
-            <td class="${scoreColor(s.RCR)}">${s.RCR.toFixed(2)}</td>
-            <td class="${scoreColor(s.NAS)}">${s.NAS.toFixed(2)}</td>
-            <td class="${scoreColor(s.SMI)}">${s.SMI.toFixed(2)}</td>
-            <td class="${scoreColor(s.LSCS)}">${s.LSCS.toFixed(2)}</td>
-            <td class="${scoreColor(s.SCI)}">${s.SCI.toFixed(2)}</td>
+            <td>${s.RCR.toFixed(2)}</td>
+            <td>${s.NAS.toFixed(2)}</td>
+            <td>${s.SMI.toFixed(2)}</td>
+            <td>${s.LSCS.toFixed(2)}</td>
+            <td>${s.SCI.toFixed(2)}</td>
             <td><strong>${s.CAS.toFixed(4)}</strong></td>
             <td><span class="verdict-badge ${verdictClass}">${verdictIcon} ${s.verdict}</span></td>
         </tr>`;
     });
+}
 
-    // Radar chart
-    renderRadarChart(data.candidates);
-
+function renderComponents(components) {
     // Components grid
     const grid = document.getElementById('componentsGrid');
     grid.innerHTML = '';
-    winner.architecture.components.forEach(comp => {
+    components.forEach(comp => {
         grid.innerHTML += `
             <div class="comp-card fade-in">
                 <div class="comp-name">${comp.name}</div>
@@ -325,9 +424,6 @@ function displayResults(data) {
                 <div class="comp-resp">${comp.responsibility}</div>
             </div>`;
     });
-
-    // Load diagrams
-    loadDiagrams(data);
 }
 
 function scoreColor(val) {
@@ -349,7 +445,8 @@ function renderRadarChart(candidates) {
         'llama-3.3-70b-versatile': { bg: 'rgba(0,201,167,0.2)', border: '#00C9A7' },
         'mixtral-8x7b-32768': { bg: 'rgba(132,94,194,0.2)', border: '#845EC2' },
         // DeepSeek models
-        'deepseek-chat': { bg: 'rgba(0,122,255,0.2)', border: '#007AFF' },
+        'deepseek-v4-flash': { bg: 'rgba(0,122,255,0.2)', border: '#007AFF' },
+        'deepseek-v4-pro': { bg: 'rgba(0,122,255,0.2)', border: '#007AFF' },
         // Gemini models
         'gemini-2.0-flash': { bg: 'rgba(66,133,244,0.2)', border: '#4285F4' },
     };

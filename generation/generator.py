@@ -14,11 +14,29 @@ from config import (
     CANDIDATES_PER_MODEL,
     GENERATION_OPTIONS,
     MAX_GENERATION_RETRIES,
-    LLM_PROVIDER,
 )
-from providers import get_provider
+from providers import get_provider_for_model
 
 logger = logging.getLogger(__name__)
+
+
+def _is_non_retryable_error(error: Exception) -> bool:
+    """Return True for errors that should fail fast without retries."""
+    status = getattr(error, "status_code", None)
+    text = str(error).lower()
+
+    if status in {400, 401, 402, 403, 404}:
+        return True
+
+    non_retryable_markers = [
+        "insufficient balance",
+        "invalid api key",
+        "authentication",
+        "permission",
+        "not found",
+        "invalid_request_error",
+    ]
+    return any(marker in text for marker in non_retryable_markers)
 
 
 class GenerationResult:
@@ -56,7 +74,8 @@ def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationRe
     Returns:
         GenerationResult with raw text or error
     """
-    provider = get_provider()
+    provider = get_provider_for_model(model)
+    last_error = "Unknown error"
 
     for attempt in range(1, MAX_GENERATION_RETRIES + 1):
         try:
@@ -89,7 +108,13 @@ def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationRe
             )
 
         except Exception as e:
+            last_error = str(e)
             logger.error(f"[{model}] Attempt {attempt} failed: {e}")
+
+            if _is_non_retryable_error(e):
+                logger.error(f"[{model}] Non-retryable error detected, aborting retries.")
+                break
+
             if attempt < MAX_GENERATION_RETRIES:
                 time.sleep(2 * attempt)  # Exponential backoff
 
@@ -99,7 +124,7 @@ def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationRe
         raw_text="",
         success=False,
         duration_ms=0,
-        error=f"All {MAX_GENERATION_RETRIES} attempts failed",
+        error=last_error,
     )
 
 
@@ -174,17 +199,21 @@ def regenerate_single(model: str, prompt: str, candidate_num: int,
 
 def check_models_available(models: list = None) -> dict:
     """
-    Check which models are available for the current provider.
+    Check which models are available by querying their specific providers.
 
     Returns:
         Dict of model_name → bool (available or not)
     """
     models = models or MODELS
-
-    try:
-        provider = get_provider()
-        return provider.check_available(models)
-    except Exception as e:
-        logger.error(f"Failed to check model availability: {e}")
-        return {m: False for m in models}
+    result = {}
+    for m in models:
+        try:
+            provider = get_provider_for_model(m)
+            # Call check_available on the specific provider for this model
+            avail = provider.check_available([m])
+            result[m] = avail.get(m, False)
+        except Exception as e:
+            logger.error(f"Failed to check model availability for {m}: {e}")
+            result[m] = False
+    return result
 
