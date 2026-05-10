@@ -1,7 +1,7 @@
 """
 HLA Agent — DeepSeek Provider
 Open-source LLM via DeepSeek API (OpenAI-compatible).
-Supports: DeepSeek-V3 (deepseek-chat) — excellent for architecture & code.
+Supports: DeepSeek-V4 (deepseek-v4-flash) — excellent for architecture & code.
 """
 
 import logging
@@ -55,12 +55,37 @@ class DeepSeekProvider(LLMProvider):
             return [m.id for m in models.data]
         except Exception as e:
             logger.error(f"Failed to list DeepSeek models: {e}")
-            return ["deepseek-chat", "deepseek-reasoner"]
+            return ["deepseek-v4-flash", "deepseek-v4-pro"]
 
     def check_available(self, models: list[str]) -> dict[str, bool]:
-        """Check model availability — if API key works, models are available."""
+        """Check model availability including a lightweight generation probe.
+
+        DeepSeek can return model lists even when billing is exhausted. We run a
+        minimal completion request to verify the account can actually generate.
+        """
         try:
             available = set(self.list_models())
+            mapped = [m for m in models if m in available]
+            if not mapped:
+                return {m: False for m in models}
+
+            probe_model = mapped[0]
+            try:
+                self.client.chat.completions.create(
+                    model=probe_model,
+                    messages=[{"role": "user", "content": "ping"}],
+                    temperature=0,
+                    max_tokens=1,
+                )
+            except Exception as e:
+                msg = str(e).lower()
+                status = getattr(e, "status_code", None)
+                if status == 402 or "insufficient balance" in msg:
+                    logger.warning("DeepSeek unavailable due to insufficient balance.")
+                else:
+                    logger.warning(f"DeepSeek availability probe failed: {e}")
+                return {m: False for m in models}
+
             return {m: m in available for m in models}
         except Exception:
-            return {m: bool(DEEPSEEK_API_KEY) for m in models}
+            return {m: False for m in models}
