@@ -10,17 +10,18 @@ Provides:
 """
 
 import logging
-from config import WEIGHTS, CAS_ACCEPTED, CAS_MARGINAL, THRESHOLDS
+from config import PHASE1_WEIGHTS, PHASE2_WEIGHTS, CAS_ACCEPTED, CAS_MARGINAL, THRESHOLDS
 
 logger = logging.getLogger(__name__)
 
 
-def compute_cas(scores: dict) -> dict:
+def compute_cas(scores: dict, phase: int = 1) -> dict:
     """
     Compute Composite Architecture Score from individual metric scores.
 
     Args:
-        scores: Dict with keys RCR, NAS, SMI, LSCS, SCI (each 0.0-1.0)
+        scores: Dict with metric keys
+        phase: 1 for Tradeoff Analysis (RCR, NAS), 2 for Structural (SMI, LSCS, SCI)
 
     Returns:
         {
@@ -32,8 +33,10 @@ def compute_cas(scores: dict) -> dict:
     """
     weighted = {}
     cas = 0.0
+    
+    weights = PHASE1_WEIGHTS if phase == 1 else PHASE2_WEIGHTS
 
-    for metric, weight in WEIGHTS.items():
+    for metric, weight in weights.items():
         value = scores.get(metric, 0.0)
         w_value = value * weight
         weighted[metric] = round(w_value, 4)
@@ -41,16 +44,20 @@ def compute_cas(scores: dict) -> dict:
 
     cas = round(cas, 4)
 
-    if cas >= CAS_ACCEPTED:
-        verdict = "Accepted"
-    elif cas >= CAS_MARGINAL:
-        verdict = "Marginal"
+    verdict = "Accepted"
+    if phase == 1:
+        if cas >= CAS_ACCEPTED:
+            verdict = "Accepted"
+        elif cas >= CAS_MARGINAL:
+            verdict = "Marginal"
+        else:
+            verdict = "Poor"
     else:
-        verdict = "Poor"
+        verdict = "Structural Evaluation Complete"
 
     below = [m for m, s in scores.items() if m in THRESHOLDS and s < THRESHOLDS[m]]
 
-    logger.info(f"CAS: {cas:.4f} → {verdict} | Below threshold: {below}")
+    logger.info(f"Phase {phase} CAS: {cas:.4f} → {verdict} | Below threshold: {below}")
 
     return {
         "cas": cas,

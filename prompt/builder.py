@@ -59,7 +59,7 @@ OUTPUT FORMAT: You MUST respond with ONLY a valid JSON object. No explanations, 
 The JSON MUST follow this EXACT schema:
 
 {
-  "architecture_style": "<one of: Layered, Microservices, Event-Driven, SOA, Hexagonal, Clean Architecture>",
+  "architecture_style": "<one of: Layered Architecture, Event-Driven Architecture, Microkernel Architecture, Microservices Architecture, Space-Based Architecture>",
   "layers": [
     {
       "name": "<layer name>",
@@ -87,13 +87,13 @@ The JSON MUST follow this EXACT schema:
     # ── Layer 4: Constraint Specification ─────────────────
     constraint_layer = """
 ARCHITECTURE STYLE SELECTION — evaluate requirements FIRST, then choose:
-- **Layered**: Best for systems with clear separation of concerns, moderate scale, CRUD-heavy workflows. DEFAULT choice unless requirements clearly demand otherwise.
-- **Hexagonal / Clean Architecture**: Best for domain-heavy systems with complex business rules, testability requirements, or plugin-based extensibility.
-- **Microservices**: ONLY for systems with multiple independent business domains, teams working independently, or extreme horizontal scaling (>50k concurrent users across distinct services).
-- **Event-Driven**: Best when requirements emphasize real-time notifications, async workflows, data streaming, or loosely coupled producers/consumers.
-- **SOA**: Best for enterprise integration scenarios with legacy system interop or cross-organization service sharing.
+- **Layered Architecture**: Best for systems with clear separation of concerns, moderate scale, CRUD-heavy workflows. DEFAULT choice unless requirements clearly demand otherwise.
+- **Event-Driven Architecture**: Best when requirements emphasize real-time notifications, async workflows, data streaming, or loosely coupled producers/consumers.
+- **Microkernel Architecture**: Best for extensible applications, product-based applications needing 3rd party plugins, or systems requiring isolated execution of dynamic rules.
+- **Microservices Architecture**: ONLY for systems with multiple independent business domains, teams working independently, or extreme horizontal scaling (>50k concurrent users across distinct services).
+- **Space-Based Architecture**: Best for systems requiring extremely high scalability and unpredictable concurrent user volumes, mitigating database bottlenecks via in-memory data grids.
 
-⚠️ DO NOT default to Microservices. For systems with fewer than 5 truly independent domains, prefer Layered or Hexagonal. Simpler is better when requirements allow it.
+⚠️ DO NOT default to Microservices. For systems with fewer than 5 truly independent domains, prefer Layered or Microkernel. Simpler is better when requirements allow it.
 
 STRUCTURAL CONSTRAINTS — follow these strictly:
 1. Choose the SIMPLEST architecture style that fully satisfies ALL requirements.
@@ -104,12 +104,11 @@ STRUCTURAL CONSTRAINTS — follow these strictly:
 6. Define interactions that show how components communicate.
 7. Interactions should primarily flow DOWNWARD (higher layers call lower layers).
 8. Style-specific rules:
-   - Layered: ensure strict layer separation, no skipping layers.
-   - Hexagonal: include Ports and Adapters, separate domain from infrastructure.
-   - Microservices: include API Gateway and Service Registry components.
-   - Event-Driven: include a Message Broker or Event Bus component.
-   - SOA: include an ESB or Service Registry component.
-   - Clean Architecture: include Use Case Interactors and Entity layer.
+   - Layered Architecture: ensure strict layer separation, no skipping layers.
+   - Event-Driven Architecture: include a Message Broker or Event Bus component.
+   - Microkernel Architecture: include a Core System and separate Plugin modules.
+   - Microservices Architecture: include API Gateway and Service Registry components.
+   - Space-Based Architecture: include Processing Unit and Virtualized Middleware components.
 """
 
     # ── Layer 5: Quality Guardrails ───────────────────────

@@ -65,18 +65,34 @@ MAX_REGENERATION_LOOPS = 3  # Max feedback-driven regeneration attempts
 # ──────────────────────────────────────────────
 # METRIC THRESHOLDS (minimum acceptable scores)
 # ──────────────────────────────────────────────
-THRESHOLDS = {
+PHASE1_THRESHOLDS = {
     "RCR":  0.80,   # Requirement Coverage Ratio
     "NAS":  0.75,   # NFR Alignment Score
+    "CAS":  0.75,   # Composite Architecture Score (acceptance gate)
+}
+
+PHASE2_THRESHOLDS = {
     "SMI":  0.75,   # Structural Modularity Index
     "LSCS": 0.90,   # Layer Separation Consistency Score
     "SCI":  0.80,   # Structural Clarity Index
-    "CAS":  0.75,   # Composite Architecture Score (acceptance gate)
 }
+
+THRESHOLDS = {**PHASE1_THRESHOLDS, **PHASE2_THRESHOLDS}
 
 # ──────────────────────────────────────────────
 # METRIC WEIGHTS (must sum to 1.0)
 # ──────────────────────────────────────────────
+PHASE1_WEIGHTS = {
+    "RCR":  0.50,
+    "NAS":  0.50,
+}
+
+PHASE2_WEIGHTS = {
+    "SMI":  0.40,
+    "LSCS": 0.30,
+    "SCI":  0.30,
+}
+
 WEIGHTS = {
     "RCR":  0.25,
     "NAS":  0.25,
@@ -86,18 +102,19 @@ WEIGHTS = {
 }
 
 # Verify weights sum to 1.0
+assert abs(sum(PHASE1_WEIGHTS.values()) - 1.0) < 1e-9, "Phase 1 weights must sum to 1.0"
+assert abs(sum(PHASE2_WEIGHTS.values()) - 1.0) < 1e-9, "Phase 2 weights must sum to 1.0"
 assert abs(sum(WEIGHTS.values()) - 1.0) < 1e-9, "Metric weights must sum to 1.0"
 
 # ──────────────────────────────────────────────
 # ARCHITECTURE STYLES
 # ──────────────────────────────────────────────
 ARCHITECTURE_STYLES = [
-    "Layered",
-    "Microservices",
-    "Event-Driven",
-    "SOA",
-    "Hexagonal",
-    "Clean Architecture",
+    "Layered Architecture",
+    "Event-Driven Architecture",
+    "Microkernel Architecture",
+    "Microservices Architecture",
+    "Space-Based Architecture",
 ]
 
 # ──────────────────────────────────────────────

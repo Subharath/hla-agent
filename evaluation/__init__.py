@@ -41,7 +41,7 @@ def evaluate_architecture(architecture: dict, requirements: dict) -> dict:
         "SCI": sci_result["score"],
     }
 
-    cas_result = compute_cas(scores)
+    cas_result = compute_cas(scores, phase=1)
 
     return {
         **scores,
