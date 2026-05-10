@@ -15,7 +15,7 @@ import json
 from typing import Optional
 
 
-def build_architecture_prompt(requirements: dict, feedback: Optional[str] = None) -> str:
+def build_architecture_prompt(requirements: dict, feedback: Optional[str] = None, candidate_num: int = 1) -> str:
     """
     Build the full structured prompt from requirements JSON.
 
@@ -30,13 +30,19 @@ def build_architecture_prompt(requirements: dict, feedback: Optional[str] = None
     frs = requirements.get("functional_requirements", [])
     nfrs = requirements.get("non_functional_requirements", [])
 
-    # ── Layer 1: Role Assignment ──────────────────────────
+    # ── Layer 1: Role Assignment & NFR Prioritization ────────
+    # Industry Best Practice: To generate diverse ATAM tradeoffs, we ask the architect 
+    # to view the system through different NFR lenses.
+    if candidate_num == 1:
+        priority_lens = "OPTIMIZE FOR SIMPLICITY: Your primary goal is to find the most balanced, maintainable, and simple architecture that meets the baseline requirements without over-engineering."
+    else:
+        priority_lens = "OPTIMIZE FOR SCALE & DECOUPLING: Your primary goal is to maximize scalability, performance, and independent deployability, prioritizing distributed patterns even if it introduces complexity."
+
     role_layer = (
         "You are a senior software architect with deep expertise across ALL architectural styles. "
-        "You evaluate each project's requirements objectively and select the simplest architecture "
-        "that fully satisfies both functional and non-functional requirements. You do NOT have a "
-        "preference for any particular style — you choose based solely on the complexity and nature "
-        "of the requirements."
+        "You evaluate each project's requirements objectively. "
+        f"For this specific candidate generation, {priority_lens} "
+        "You do NOT have a preference for any particular style — you choose based on the requirements and your assigned optimization goal."
     )
 
     # ── Layer 2: Context Injection ────────────────────────

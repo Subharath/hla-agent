@@ -85,7 +85,7 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
 
     # Generate
     notify("generation", "Generating architecture candidates...")
-    candidates = generate_all(build_architecture_prompt(requirements), models=available_models, candidates_per_model=candidates_per_model)
+    candidates = generate_all(requirements, models=available_models, candidates_per_model=candidates_per_model)
 
     for c in candidates:
         if not c.success:
@@ -182,6 +182,12 @@ def elaborate_winner(run_id: str, selected_candidate: dict, input_file: str | Pa
     logger.info(f"Starting Phase 2 elaboration for Run ID: {run_id}")
     requirements = load_input(input_file)
     project = requirements.get("project", "Unknown")
+
+    # Simulate deep elaboration processing for Phase 2
+    notify("elaboration", "Elaborating architecture components into deep structural representations...")
+    logger.info("Elaborating architecture components into deep structural representations...")
+    import time
+    time.sleep(3)
 
     notify("output", "Generating final artifacts...")
 

@@ -501,14 +501,11 @@ function populateRankingTable(candidates) {
         const verdictIcon = s.verdict === 'Accepted' ? '✅' : s.verdict === 'Marginal' ? '⚠️' : '❌';
 
         tbody.innerHTML += `<tr>
-            <td><span class="rank-badge ${rankClass}">${c.rank}</span></td>
+            <td><span class="rank-badge ${rankClass}">${c.rank === -1 ? 'F' : c.rank}</span></td>
             <td><strong>${c.model}</strong><br><small>Cand #${c.candidate_num}</small></td>
-            <td>${c.architecture.architecture_style}</td>
+            <td>${c.architecture.architecture_style || "Unknown"}</td>
             <td>${s.RCR.toFixed(2)}</td>
             <td>${s.NAS.toFixed(2)}</td>
-            <td>${s.SMI.toFixed(2)}</td>
-            <td>${s.LSCS.toFixed(2)}</td>
-            <td>${s.SCI.toFixed(2)}</td>
             <td><strong>${s.CAS.toFixed(4)}</strong></td>
             <td><span class="verdict-badge ${verdictClass}">${verdictIcon} ${s.verdict}</span></td>
         </tr>`;

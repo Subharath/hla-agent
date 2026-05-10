@@ -128,14 +128,14 @@ def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationRe
     )
 
 
-def generate_all(prompt: str, models: list = None,
+def generate_all(requirements: dict, models: list = None,
                  candidates_per_model: int = None,
                  progress_callback=None) -> list[GenerationResult]:
     """
     Generate architecture candidates from all configured models.
 
     Args:
-        prompt: Full structured prompt
+        requirements: Requirements dict
         models: List of model names (defaults to config.MODELS)
         candidates_per_model: How many candidates per model (defaults to config)
         progress_callback: Optional callback(model, candidate_num, total, status)
@@ -150,6 +150,8 @@ def generate_all(prompt: str, models: list = None,
     total = len(models) * candidates_per_model
     current = 0
 
+    from prompt.builder import build_architecture_prompt
+
     for model in models:
         for candidate_num in range(1, candidates_per_model + 1):
             current += 1
@@ -157,6 +159,8 @@ def generate_all(prompt: str, models: list = None,
             if progress_callback:
                 progress_callback(model, candidate_num, total, "generating")
 
+            # Dynamically build prompt per candidate_num for ATAM diversity
+            prompt = build_architecture_prompt(requirements, candidate_num=candidate_num)
             result = generate_single(model, prompt, candidate_num)
             results.append(result)
 

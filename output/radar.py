@@ -87,8 +87,17 @@ def generate_radar_chart(candidates: list, output_path: str,
 
     # Styling
     ax.set_xticks(angles[:-1])
-    # Capitalize the NFR names for better display
-    display_metrics = [m.capitalize() for m in nfr_metrics]
+    
+    # Capitalize the NFR names for better display, extracting the 'type' from alignment_map
+    display_metrics = []
+    if candidates and "details" in candidates[0].get("scores", {}):
+        alignment_map = candidates[0]["scores"]["details"].get("nas", {}).get("alignment_map", {})
+        for nfr_id in nfr_metrics:
+            t = alignment_map.get(nfr_id, {}).get("type", nfr_id)
+            display_metrics.append(t.capitalize())
+    else:
+        display_metrics = [m.capitalize() for m in nfr_metrics]
+        
     ax.set_xticklabels(display_metrics, fontsize=14, fontweight='bold', color='white')
 
     ax.set_ylim(0, 1.05)
