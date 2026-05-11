@@ -419,6 +419,77 @@ body {
 /* ─── Radar ─── */
 .radar-container { max-width: 550px; margin: 0 auto; }
 
+/* ─── LLM Logs ─── */
+.llm-log-item {
+    margin-bottom: 12px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+}
+
+.llm-log-item summary {
+    cursor: pointer;
+    padding: 12px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.llm-log-meta {
+    padding: 8px 14px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.llm-log-meta ul {
+    margin: 6px 0 0 20px;
+    padding: 0;
+}
+
+.llm-raw {
+    margin: 0;
+    padding: 12px 14px;
+    max-height: 240px;
+    overflow: auto;
+    border-top: 1px solid var(--glass-border);
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--accent-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+}
+
+.llm-error {
+    color: var(--danger);
+    font-family: var(--font-mono);
+    margin-top: 4px;
+}
+
+/* CLI Log */
+.cli-log {
+    background: rgba(0,0,0,0.35);
+    color: #cbd5e1;
+    padding: 12px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    max-height: 240px;
+    overflow: auto;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+}
+
+.nfr-coverage { margin-top: 8px; font-size: 13px; color: var(--text-secondary); }
+.nfr-item { padding: 6px 8px; border-radius: 6px; margin-bottom: 6px; background: rgba(255,255,255,0.02); line-height: 1.35; }
+.nfr-score { font-weight: 800; margin-right: 8px; color: var(--text-primary); }
+.nfr-summary { color: var(--text-muted); font-weight: 600; margin-left: 6px; }
+.nfr-id { font-weight: 700; margin-right: 6px; }
+.nfr-status { font-weight: 800; }
+.nfr-aligned { color: var(--success); }
+.nfr-unaligned { color: var(--danger); }
+.nfr-target { display: block; margin-top: 3px; color: var(--text-muted); font-size: 12px; }
+
 /* ─── Components Grid ─── */
 .components-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 
@@ -455,6 +526,22 @@ body {
 
 .diagram-view { min-height: 300px; display: flex; align-items: center; justify-content: center; }
 .diagram-code { color: var(--accent-primary); font-family: var(--font-mono); font-size: 13px; white-space: pre-wrap; overflow-x: auto; }
+.diagram-diff {
+    margin-top: 12px;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.25);
+    padding: 12px;
+}
+
+.diff-added { color: #22c55e; }
+.diff-removed { color: #ef4444; }
+.diff-context { color: var(--text-secondary); }
 
 /* ─── Footer ─── */
 .footer {

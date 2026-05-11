@@ -8,6 +8,7 @@ let currentRequirements = null;
 let currentResults = null;
 let radarChartInstance = null;
 let ws = null;
+let previousPlantUmlCode = '';
 
 // ─── Init ─────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -275,7 +276,15 @@ function displayTradeoffPhase(data) {
     resultsSection.classList.remove('hidden');
     document.getElementById('diagrams-section').classList.add('hidden');
 
+    const selectedIndex = (data.selectedCandidateIndex ?? currentResults?.selectedCandidateIndex);
+
     document.getElementById('resultsRunId').textContent = `Run ID: ${data.run_id} — Pending ATAM Tradeoff Selection`;
+    document.getElementById('diagrams-section').classList.add('hidden');
+    document.getElementById('mermaidDiagram').innerHTML = '';
+    document.getElementById('plantumlDiagram').textContent = '';
+    document.getElementById('plantumlDiff').textContent = '';
+    document.getElementById('plantumlDiff').classList.add('hidden');
+    previousPlantUmlCode = '';
     
     // Hide winner card, show tradeoff card
     document.getElementById('winnerCard').classList.add('hidden');
@@ -307,10 +316,9 @@ function displayTradeoffPhase(data) {
     tradeoffCard.innerHTML = headerHtml + '<div class="tradeoff-grid" id="tradeoffGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 20px;"></div>';
 
 
-    // Show Radar image
-    const radarImg = document.getElementById('radarImage');
-    radarImg.src = data.radar_url;
-    radarImg.style.display = 'block';
+    // Phase 1 intentionally does not show radar chart.
+    document.getElementById('radarImage').style.display = 'none';
+    document.getElementById('radarChart').style.display = 'none';
 
     const grid = document.getElementById('tradeoffGrid');
     
@@ -318,11 +326,13 @@ function displayTradeoffPhase(data) {
         const s = c.scores || {};
         const isFailed = c.rank === -1;
         const isTop = index === 0 && isDominant;
+        const isSelected = selectedIndex === index;
         
         // CSS classes for Dominant UI
-        const cardClass = isTop ? 'card glass-card dominant-card' : (isDominant ? 'card glass-card alternative-card' : 'card glass-card');
-        const glowStyle = isTop ? 'box-shadow: 0 0 20px rgba(16, 185, 129, 0.4); border-color: var(--success);' : '';
+        const cardClass = isSelected ? 'card glass-card dominant-card' : (isTop ? 'card glass-card dominant-card' : (isDominant ? 'card glass-card alternative-card' : 'card glass-card'));
+        const glowStyle = isSelected ? 'box-shadow: 0 0 20px rgba(16, 185, 129, 0.45); border-color: var(--success);' : (isTop ? 'box-shadow: 0 0 20px rgba(16, 185, 129, 0.4); border-color: var(--success);' : '');
         const rankBadge = isFailed ? '<div class="badge" style="background: rgba(239, 68, 68, 0.2); color: var(--danger); position: absolute; top: 10px; right: 10px;">Failed</div>' 
+                                   : isSelected ? '<div class="badge" style="background: rgba(16, 185, 129, 0.2); color: var(--success); position: absolute; top: 10px; right: 10px;">Selected</div>'
                                    : `<div class="badge" style="position: absolute; top: 10px; right: 10px;">Rank ${c.rank}</div>`;
         
         let contentHtml = '';
@@ -332,14 +342,32 @@ function displayTradeoffPhase(data) {
                 <div style="font-size: 0.85em; color: var(--text-secondary); background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; margin-bottom: 15px;">
                     ${c.error || "Generation Failed"}
                 </div>
-                <button class="run-btn" style="width: 100%; justify-content: center; background: var(--bg-secondary); border: 1px solid var(--danger);" onclick="regenerateCandidate('${data.run_id}', ${index})">
-                    🔄 Regenerate (Manual)
-                </button>
             `;
         } else {
             const prosCons = c.architecture.pros_and_cons || "No contextual analysis provided.";
-            contentHtml = `
-                <div style="font-size: 1.5em; font-weight: 700; color: var(--primary); margin: 10px 0;">Phase 1 CAS: ${s.CAS.toFixed(4)}</div>
+                // Build concise NFR coverage block
+                let nfrBlock = '';
+                try {
+                    const nasDetails = s.details?.nas?.alignment_map || {};
+                    const unaligned = s.details?.nas?.unaligned || [];
+                    const alignedCount = s.details?.nas?.aligned_count ?? Object.values(nasDetails).filter(v => v.aligned || v.coverage === 1).length;
+                    const nfrEntries = Object.entries(nasDetails);
+                    if (nfrEntries.length) {
+                        nfrBlock += `<div class="nfr-coverage"><strong>NFR Coverage</strong> <span class="nfr-summary">(${alignedCount}/${nfrEntries.length} covered)</span>`;
+                        nfrEntries.forEach(([nid, info]) => {
+                            const coverage = Number(info.coverage ?? (info.aligned ? 1 : 0));
+                            const status = (unaligned.includes(nid) || coverage < 1) ? 'Unaligned' : 'Aligned';
+                            const target = info.target ? ` <span class="nfr-target">${info.target}</span>` : '';
+                            nfrBlock += `<div class="nfr-item">`;
+                            nfrBlock += `<span class="nfr-score">${coverage}</span> <span class="nfr-id">${nid}</span> <span class="nfr-status ${status === 'Aligned' ? 'nfr-aligned' : 'nfr-unaligned'}">(${status})</span>${target}`;
+                            nfrBlock += `</div>`;
+                        });
+                        nfrBlock += `</div>`;
+                    }
+                } catch (e) { nfrBlock = ''; }
+
+                contentHtml = `
+                <div style="font-size: 1.5em; font-weight: 700; color: var(--primary); margin: 10px 0;">Phase 1 CAS: ${(s.PHASE1_CAS || 0).toFixed(4)}</div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.85em; margin-bottom: 15px; border-bottom: 1px solid var(--glass-border); padding-bottom: 10px;">
                     <div><strong>RCR</strong> (Func): ${s.RCR.toFixed(2)}</div>
                     <div><strong>NAS</strong> (NFR): ${s.NAS.toFixed(2)}</div>
@@ -347,8 +375,9 @@ function displayTradeoffPhase(data) {
                 <div style="font-size: 0.85em; color: var(--text-secondary); margin-bottom: 15px; font-style: italic; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 4px; border-left: 3px solid var(--accent-primary);">
                     <strong>LLM Analysis:</strong><br>${prosCons}
                 </div>
-                <button class="run-btn" style="width: 100%; justify-content: center; ${isTop ? 'background: var(--success);' : ''}" onclick="selectCandidate('${data.run_id}', ${index})">
-                    ${isTop ? 'Accept Dominant Architecture' : 'Select this Architecture'}
+                    ${nfrBlock}
+                <button class="run-btn" style="width: 100%; justify-content: center; ${isSelected ? 'background: var(--success);' : (isTop ? 'background: var(--success);' : '')}" onclick="selectCandidate('${data.run_id}', ${index})">
+                    ${isSelected ? 'Selected for Phase 2' : (isTop ? 'Accept Dominant Architecture' : 'Select this Architecture')}
                 </button>
             `;
         }
@@ -363,53 +392,9 @@ function displayTradeoffPhase(data) {
         `;
     });
 
-    // Populate Ranking Table (same as before)
+    // Populate Ranking Table + full LLM logs
     populateRankingTable(data.candidates);
-}
-
-// ─── Manual Regeneration ─────────────────────
-const manualIterations = {}; // Track iterations per candidate: { "run_id_cand_idx": count }
-
-async function regenerateCandidate(run_id, candidate_idx) {
-    const key = `${run_id}_${candidate_idx}`;
-    if (!manualIterations[key]) manualIterations[key] = 0;
-    
-    if (manualIterations[key] >= 2) {
-        alert("Maximum manual iterations (2) reached for this candidate to prevent hallucination drift.");
-        return;
-    }
-    
-    manualIterations[key]++;
-    updateStatus(`Regenerating (${manualIterations[key]}/2)...`, '#3B82F6');
-    
-    const candidate = currentResults.candidates[candidate_idx];
-    
-    try {
-        const res = await fetch(`/api/runs/${run_id}/regenerate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: candidate.model,
-                candidate_num: candidate.candidate_num,
-                error: candidate.error || "Please improve the architecture to pass threshold."
-            })
-        });
-        
-        if (!res.ok) throw new Error('Regeneration request failed');
-        const result = await res.json();
-        
-        // Update the current results object and re-render
-        currentResults.candidates[candidate_idx] = result.candidate;
-        
-        // Re-evaluate dominance if necessary (though usually we don't for regenerated candidates)
-        // Just re-render Phase 1
-        displayTradeoffPhase(currentResults);
-        updateStatus('Pending Selection', '#FACC15');
-        
-    } catch (err) {
-        updateStatus('Regeneration Error', '#EF4444');
-        alert("Regeneration failed: " + err.message);
-    }
+    renderLlmLogs(data.candidates);
 }
 
 // ─── Select Candidate (Phase 2 trigger) ──────
@@ -437,6 +422,9 @@ async function selectCandidate(run_id, candidate_idx) {
         
         if (!res.ok) throw new Error('Failed to elaborate architecture');
         const result = await res.json();
+
+        currentResults.selectedCandidateIndex = candidate_idx;
+        currentResults.phase2Result = result;
         
         updateProgress(100, '✅ Elaboration complete!');
         updateStatus('Complete', '#10B981');
@@ -456,6 +444,7 @@ function displayFinalWinner(data) {
     document.getElementById('winnerCard').classList.remove('hidden');
     document.getElementById('componentsCard').classList.remove('hidden');
     document.getElementById('diagrams-section').classList.remove('hidden');
+    document.getElementById('resultsRunId').textContent = `Run ID: ${data.run_id} — Phase 2 Complete`;
 
     // Winner card
     const winner = data.winner;
@@ -472,8 +461,7 @@ function displayFinalWinner(data) {
         const colorClass = val >= 0.8 ? 'score-high' : val >= 0.6 ? 'score-mid' : 'score-low';
         const barColor = val >= 0.8 ? '#10B981' : val >= 0.6 ? '#F59E0B' : '#EF4444';
         
-        // Rename LSCS to TCS for UI display to reflect style-awareness
-        const displayName = metric === 'LSCS' ? 'TCS' : metric;
+        const displayName = metric;
         
         metricsDiv.innerHTML += `
             <div class="metric-card fade-in">
@@ -484,6 +472,19 @@ function displayFinalWinner(data) {
     });
 
     renderComponents(winner.architecture.components);
+
+    if (currentResults?.candidates) {
+        populateRankingTable(currentResults.candidates);
+    }
+
+    // Phase 2 radar visualization based on final 5 metrics.
+    document.getElementById('radarChart').style.display = 'block';
+    document.getElementById('radarImage').style.display = 'none';
+    renderRadarChart([{
+        model: winner.model,
+        candidate_num: 1,
+        scores: winner.scores,
+    }]);
     
     // Auto-switch to diagrams
     if (data.outputs) {
@@ -491,14 +492,25 @@ function displayFinalWinner(data) {
     }
 }
 
+function appendCliLog(line) {
+    const box = document.getElementById('cliLog');
+    if (!box) return;
+    box.textContent = (box.textContent || '') + line + '\n';
+    box.scrollTop = box.scrollHeight;
+}
+
 function populateRankingTable(candidates) {
     const tbody = document.getElementById('resultsBody');
     tbody.innerHTML = '';
+    const selectedIndex = currentResults?.selectedCandidateIndex;
     candidates.forEach(c => {
         const s = c.scores;
         const rankClass = c.rank <= 3 ? `rank-${c.rank}` : '';
-        const verdictClass = s.verdict === 'Accepted' ? 'verdict-accepted' : s.verdict === 'Marginal' ? 'verdict-marginal' : 'verdict-poor';
-        const verdictIcon = s.verdict === 'Accepted' ? '✅' : s.verdict === 'Marginal' ? '⚠️' : '❌';
+        const phase1Verdict = selectedIndex === undefined || selectedIndex === null
+            ? (s.phase1_verdict || s.verdict)
+            : (candidates[selectedIndex] === c ? 'Accepted' : 'Alternative');
+        const verdictClass = phase1Verdict === 'Accepted' ? 'verdict-accepted' : (phase1Verdict === 'Marginal' || phase1Verdict === 'Alternative') ? 'verdict-marginal' : 'verdict-poor';
+        const verdictIcon = phase1Verdict === 'Accepted' ? '✅' : (phase1Verdict === 'Marginal' || phase1Verdict === 'Alternative') ? '⚠️' : '❌';
 
         tbody.innerHTML += `<tr>
             <td><span class="rank-badge ${rankClass}">${c.rank === -1 ? 'F' : c.rank}</span></td>
@@ -506,9 +518,46 @@ function populateRankingTable(candidates) {
             <td>${c.architecture.architecture_style || "Unknown"}</td>
             <td>${s.RCR.toFixed(2)}</td>
             <td>${s.NAS.toFixed(2)}</td>
-            <td><strong>${s.CAS.toFixed(4)}</strong></td>
-            <td><span class="verdict-badge ${verdictClass}">${verdictIcon} ${s.verdict}</span></td>
+            <td><strong>${(s.PHASE1_CAS || 0).toFixed(4)}</strong></td>
+            <td><span class="verdict-badge ${verdictClass}">${verdictIcon} ${phase1Verdict}</span></td>
         </tr>`;
+    });
+}
+
+function renderLlmLogs(candidates) {
+    const container = document.getElementById('llmLogsContainer');
+    if (!container) return;
+
+    container.innerHTML = '';
+    candidates.forEach((candidate) => {
+        const llm = candidate.llm || {};
+        const attempts = llm.attempts || [];
+        const attemptsHtml = attempts.length
+            ? attempts.map(a => {
+                const status = a.status || 'unknown';
+                const dur = a.duration_ms ? `${a.duration_ms} ms` : '-';
+                const chars = a.chars || 0;
+                const err = a.error ? `<div class="llm-error">error: ${a.error}</div>` : '';
+                return `<li>attempt ${a.attempt}: ${status}, duration=${dur}, chars=${chars}${err}</li>`;
+            }).join('')
+            : '<li>No attempt-level logs available.</li>';
+
+        const raw = (llm.raw_text || candidate.raw_text || '').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+        const duration = llm.duration_ms ? `${Math.round(llm.duration_ms)} ms` : '-';
+
+        container.innerHTML += `
+            <details class="llm-log-item">
+                <summary>
+                    ${candidate.model} #${candidate.candidate_num} | provider=${llm.provider || 'unknown'} | duration=${duration}
+                </summary>
+                <div class="llm-log-meta">
+                    <strong>attempts:</strong>
+                    <ul>${attemptsHtml}</ul>
+                </div>
+                <div class="llm-log-meta"><strong>raw output:</strong></div>
+                <pre class="llm-raw">${raw}</pre>
+            </details>
+        `;
     });
 }
 
@@ -635,8 +684,59 @@ async function loadDiagrams(data) {
         if (res.ok) {
             const d = await res.json();
             document.getElementById('plantumlDiagram').textContent = d.content;
+
+            const diffBox = document.getElementById('plantumlDiff');
+            const diffText = buildLineDiff(previousPlantUmlCode, d.content);
+            if (diffText.trim()) {
+                diffBox.innerHTML = colorizeDiff(diffText);
+                diffBox.classList.remove('hidden');
+            } else {
+                diffBox.textContent = 'No changes from previous diagram iteration.';
+                diffBox.classList.remove('hidden');
+            }
+            previousPlantUmlCode = d.content;
         }
     } catch (e) { /* ignore */ }
+}
+
+function buildLineDiff(oldText, newText) {
+    if (!oldText) {
+        return newText
+            .split('\n')
+            .map(line => `+ ${line}`)
+            .join('\n');
+    }
+
+    const oldLines = oldText.split('\n');
+    const newLines = newText.split('\n');
+    const oldSet = new Set(oldLines);
+    const newSet = new Set(newLines);
+    const out = [];
+
+    oldLines.forEach(line => {
+        if (!newSet.has(line)) {
+            out.push(`- ${line}`);
+        }
+    });
+    newLines.forEach(line => {
+        if (!oldSet.has(line)) {
+            out.push(`+ ${line}`);
+        }
+    });
+
+    return out.join('\n');
+}
+
+function colorizeDiff(diffText) {
+    return diffText
+        .split('\n')
+        .map(line => {
+            const escaped = line.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+            if (line.startsWith('+ ')) return `<span class="diff-added">${escaped}</span>`;
+            if (line.startsWith('- ')) return `<span class="diff-removed">${escaped}</span>`;
+            return `<span class="diff-context">${escaped}</span>`;
+        })
+        .join('\n');
 }
 
 function showDiagramTab(tab) {
@@ -645,6 +745,7 @@ function showDiagramTab(tab) {
 
     document.getElementById('mermaidDiagram').classList.toggle('hidden', tab !== 'mermaid');
     document.getElementById('plantumlDiagram').classList.toggle('hidden', tab !== 'plantuml');
+    document.getElementById('plantumlDiff').classList.toggle('hidden', tab !== 'plantuml');
 }
 
 // ─── History ─────────────────────────────────

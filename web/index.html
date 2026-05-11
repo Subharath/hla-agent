@@ -173,9 +173,21 @@
                 </div>
             </div>
 
+            <!-- Complete LLM Logs -->
+            <div class="card glass-card" id="llmLogsCard">
+                <h3 class="card-title">🧠 Complete LLM Generation Logs</h3>
+                <div id="llmLogsContainer"></div>
+            </div>
+
+            <!-- CLI-style Pipeline Log -->
+            <div class="card glass-card" id="cliLogCard">
+                <h3 class="card-title">🖥️ CLI Pipeline Log</h3>
+                <pre id="cliLog" class="cli-log"></pre>
+            </div>
+
             <!-- Radar Chart -->
             <div class="card glass-card">
-                <h3 class="card-title">🎯 Tradeoff Radar Comparison</h3>
+                <h3 class="card-title">🎯 Phase 2 Radar (5 Metrics)</h3>
                 <div class="radar-container">
                     <img id="radarImage" src="" alt="Radar Chart" style="max-width: 100%; display: none; border-radius: 8px;">
                     <canvas id="radarChart" style="display: none;"></canvas>
@@ -201,6 +213,7 @@
             <div class="card glass-card">
                 <div id="mermaidDiagram" class="diagram-view"></div>
                 <pre id="plantumlDiagram" class="diagram-code hidden"></pre>
+                <pre id="plantumlDiff" class="diagram-diff hidden"></pre>
             </div>
         </section>
 
