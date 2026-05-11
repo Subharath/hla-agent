@@ -1,22 +1,55 @@
-"""
-HLA Agent — NAS: NFR Alignment Score (Deterministic)
+"""HLA Agent — NAS: NFR Alignment Score (Deterministic)
 
-Deterministic, auditable scoring engine aligned to ATAM quality concerns.
-No LLM is used for validation.
+NAS is a deterministic, auditable *evidence rubric* that estimates how well an
+architecture description supports each stated NFR.
+
+Important (research/industry positioning):
+- This is NOT an ISO/IEC or ATAM-defined numeric metric.
+- It is a repeatable heuristic inspired by quality-attribute evaluation practice
+    (e.g., scenario/tactic thinking as used in ATAM-style reviews) and common NFR
+    taxonomies (e.g., ISO/IEC 25010).
+- The numeric coefficients below are project-calibrated parameters. To claim
+    "validated" performance, calibrate/benchmark against expert ratings and/or
+    operational outcomes.
 
 Formula:
-        NAS = average(nfr_support_score_i)
+        NAS = average(score_i)
 
-Each NFR score is computed from explicit architecture evidence:
-    - Component names/responsibilities
-    - Interaction protocol types
-    - Style compatibility bonuses/penalties
+Each per-NFR score is computed from explicit evidence:
+        score = evidence_score + interaction_bonus + style_bonus - style_penalty
 """
 
 import re
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+NAS_METHOD = {
+    "name": "nas_evidence_rubric",
+    "version": "1.1",
+    "positioning": "Deterministic evidence-based rubric (heuristic), not a standardized industry metric.",
+    "inspired_by": [
+        "ATAM-style quality-attribute evaluation practices (scenario/tactic based reviews)",
+        "ISO/IEC 25010 quality model (quality characteristics taxonomy)",
+    ],
+}
+
+
+NAS_PARAMETERS = {
+    "weights": {"high_hit": 0.30, "medium_hit": 0.12, "implicit_hit": 0.06},
+    "caps": {"evidence_score": 1.0, "interaction_bonus": 0.20, "final_score": [0.0, 1.0]},
+    "alignment_threshold": 0.50,
+}
+
+
+_HIGH_HIT_WEIGHT = float(NAS_PARAMETERS["weights"]["high_hit"])
+_MED_HIT_WEIGHT = float(NAS_PARAMETERS["weights"]["medium_hit"])
+_IMPLICIT_HIT_WEIGHT = float(NAS_PARAMETERS["weights"]["implicit_hit"])
+
+_EVIDENCE_SCORE_CAP = float(NAS_PARAMETERS["caps"]["evidence_score"])
+_INTERACTION_BONUS_CAP = float(NAS_PARAMETERS["caps"]["interaction_bonus"])
+_ALIGNMENT_THRESHOLD = float(NAS_PARAMETERS["alignment_threshold"])
 
 
 STYLE_ALIASES = {
@@ -148,10 +181,26 @@ def _implicit_hits(text: str, indicators: list[str]) -> int:
     return hits
 
 
-def _score_nfr(architecture: dict, nfr: dict, style: str) -> tuple[float, str]:
+def _score_nfr(architecture: dict, nfr: dict, style: str) -> tuple[float, dict]:
     nfr_type = _normalize_nfr_type(nfr.get("type", ""))
     if nfr_type not in EVIDENCE_KEYWORDS:
-        return 0.5, "Unknown NFR type; assigned neutral deterministic baseline (0.5)."
+        reasoning = "Unknown NFR type; assigned neutral deterministic baseline (0.5)."
+        breakdown = {
+            "evidence_score": 0.5,
+            "interaction_bonus": 0.0,
+            "style_bonus": 0.0,
+            "style_penalty": 0.0,
+            "final_score": 0.5,
+            "reasoning": reasoning,
+            "details": {
+                "high_hits": 0,
+                "medium_hits": 0,
+                "implicit_hits": 0,
+                "interaction_types_found": [],
+                "style": style,
+            }
+        }
+        return 0.5, breakdown
 
     arch_text = _build_architecture_text(architecture)
     evidence = EVIDENCE_KEYWORDS[nfr_type]
@@ -161,30 +210,59 @@ def _score_nfr(architecture: dict, nfr: dict, style: str) -> tuple[float, str]:
     implicit_hits = _implicit_hits(arch_text, IMPLICIT_INDICATORS.get(nfr_type, []))
 
     # Deterministic evidence score from explicit mechanisms + implicit indicators
-    evidence_score = min(1.0, (0.30 * high_hits) + (0.12 * med_hits) + (0.06 * implicit_hits))
+    evidence_score = min(
+        _EVIDENCE_SCORE_CAP,
+        (_HIGH_HIT_WEIGHT * high_hits) + (_MED_HIT_WEIGHT * med_hits) + (_IMPLICIT_HIT_WEIGHT * implicit_hits),
+    )
 
     # Interaction-level protocol support
     interaction_bonus = 0.0
+    interaction_types_found = []
     for inter in architecture.get("interactions", []):
         itype = (inter.get("type", "") or "").strip().lower()
-        interaction_bonus += INTERACTION_EVIDENCE.get(itype, {}).get(nfr_type, 0.0)
-    interaction_bonus = min(0.20, interaction_bonus)
+        bonus = INTERACTION_EVIDENCE.get(itype, {}).get(nfr_type, 0.0)
+        if bonus > 0:
+            interaction_types_found.append(itype)
+        interaction_bonus += bonus
+    interaction_bonus = min(_INTERACTION_BONUS_CAP, interaction_bonus)
 
     style_bonus = STYLE_QUALITY_BONUS.get(style, {}).get(nfr_type, 0.0)
     style_penalty = STYLE_QUALITY_PENALTY.get(style, {}).get(nfr_type, 0.0)
 
-    score = max(0.0, min(1.0, evidence_score + interaction_bonus + style_bonus - style_penalty))
+    final_score = max(0.0, min(1.0, evidence_score + interaction_bonus + style_bonus - style_penalty))
+
     reasoning = (
-        f"type={nfr_type}, high_hits={high_hits}, medium_hits={med_hits}, implicit_hits={implicit_hits}, "
-        f"interaction_bonus={interaction_bonus:.2f}, style={style}, "
-        f"style_bonus={style_bonus:.2f}, style_penalty={style_penalty:.2f}"
+        f"type={nfr_type}, "
+        f"evidence_score={evidence_score:.4f} (high_hits={high_hits}, medium_hits={med_hits}, implicit_hits={implicit_hits}), "
+        f"interaction_bonus={interaction_bonus:.4f}, style={style}, "
+        f"style_bonus={style_bonus:.4f}, style_penalty={style_penalty:.4f}, "
+        f"final_score={final_score:.4f}"
     )
-    return score, reasoning
+    
+    breakdown = {
+        "evidence_score": round(evidence_score, 4),
+        "interaction_bonus": round(interaction_bonus, 4),
+        "style_bonus": round(style_bonus, 4),
+        "style_penalty": round(style_penalty, 4),
+        "final_score": round(final_score, 4),
+        "reasoning": reasoning,
+        "details": {
+            "high_hits": high_hits,
+            "medium_hits": med_hits,
+            "implicit_hits": implicit_hits,
+            "interaction_types_found": interaction_types_found,
+            "style": style,
+        }
+    }
+    return final_score, breakdown
 
 
 def compute_nas(architecture: dict, requirements: dict, evaluator_model: str = None) -> dict:
     """
-    Compute NFR Alignment Score using deterministic evidence rules.
+    Compute NFR Alignment Score using deterministic evidence rubric rules.
+
+    Rubric breakdown with detailed component scoring:
+    score_i = evidence_score + interaction_bonus + style_bonus - style_penalty
 
     Args:
         architecture: Parsed architecture dict
@@ -195,14 +273,28 @@ def compute_nas(architecture: dict, requirements: dict, evaluator_model: str = N
         {
             "score": float (0.0 - 1.0),
             "aligned_count": int,
-            "alignment_map": { nfr_id: { type, score, reasoning } },
+            "alignment_map": { 
+                nfr_id: { 
+                    type, target, score, coverage, aligned, 
+                    breakdown: {
+                        evidence_score, interaction_bonus, style_bonus, style_penalty, final_score, details
+                    }
+                } 
+            },
             "unaligned": [nfr_ids]
         }
     """
     nfrs = requirements.get("non_functional_requirements", [])
 
     if not nfrs:
-        return {"score": 1.0, "alignment_map": {}, "unaligned": []}
+        return {
+            "score": 1.0,
+            "aligned_count": 0,
+            "alignment_map": {},
+            "unaligned": [],
+            "method": NAS_METHOD,
+            "parameters": NAS_PARAMETERS,
+        }
 
     alignment_map = {}
     unaligned = []
@@ -210,26 +302,27 @@ def compute_nas(architecture: dict, requirements: dict, evaluator_model: str = N
     aligned_count = 0
 
     style = _normalize_style(architecture.get("architecture_style", ""))
-    logger.info("Evaluating NAS using deterministic rules engine")
+    logger.info("Evaluating NAS using deterministic rules engine with detailed breakdowns")
 
     for nfr in nfrs:
         nfr_id = nfr.get("id")
         nfr_type = nfr.get("type", "")
         nfr_target = nfr.get("target", "")
 
-        score, reasoning = _score_nfr(architecture, nfr, style)
+        score, breakdown = _score_nfr(architecture, nfr, style)
         total_score += score
 
         alignment_map[nfr_id] = {
             "type": nfr_type,
             "target": nfr_target,
             "score": round(score, 4),
-            "coverage": 1 if score >= 0.5 else 0,
-            "aligned": score >= 0.5,
-            "reasoning": reasoning,
+            "coverage": 1 if score >= _ALIGNMENT_THRESHOLD else 0,
+            "aligned": score >= _ALIGNMENT_THRESHOLD,
+            "breakdown": breakdown,
+            "reasoning": breakdown.get("reasoning", ""),
         }
 
-        if score < 0.5:
+        if score < _ALIGNMENT_THRESHOLD:
             unaligned.append(nfr_id)
         else:
             aligned_count += 1
@@ -245,4 +338,6 @@ def compute_nas(architecture: dict, requirements: dict, evaluator_model: str = N
         "aligned_count": aligned_count,
         "alignment_map": alignment_map,
         "unaligned": unaligned,
+        "method": NAS_METHOD,
+        "parameters": NAS_PARAMETERS,
     }

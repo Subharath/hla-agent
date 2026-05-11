@@ -31,8 +31,8 @@ def build_architecture_prompt(requirements: dict, feedback: Optional[str] = None
     nfrs = requirements.get("non_functional_requirements", [])
 
     # ── Layer 1: Role Assignment & NFR Prioritization ────────
-    # Industry Best Practice: To generate diverse ATAM tradeoffs, we ask the architect 
-    # to view the system through different NFR lenses.
+    # Common architecture review practice: to explore tradeoffs, ask for candidates
+    # optimized for different quality attributes (NFR lenses).
     if candidate_num == 1:
         priority_lens = "OPTIMIZE FOR SIMPLICITY: Your primary goal is to find the most balanced, maintainable, and simple architecture that meets the baseline requirements without over-engineering."
     else:

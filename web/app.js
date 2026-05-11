@@ -345,7 +345,7 @@ function displayTradeoffPhase(data) {
             `;
         } else {
             const prosCons = c.architecture.pros_and_cons || "No contextual analysis provided.";
-                // Build concise NFR coverage block
+                // Build deterministic NAS rubric breakdown
                 let nfrBlock = '';
                 try {
                     const nasDetails = s.details?.nas?.alignment_map || {};
@@ -353,18 +353,42 @@ function displayTradeoffPhase(data) {
                     const alignedCount = s.details?.nas?.aligned_count ?? Object.values(nasDetails).filter(v => v.aligned || v.coverage === 1).length;
                     const nfrEntries = Object.entries(nasDetails);
                     if (nfrEntries.length) {
-                        nfrBlock += `<div class="nfr-coverage"><strong>NFR Coverage</strong> <span class="nfr-summary">(${alignedCount}/${nfrEntries.length} covered)</span>`;
-                        nfrEntries.forEach(([nid, info]) => {
+                        nfrBlock += `<div class="nfr-coverage"><strong>NAS Evidence Rubric</strong> <span class="nfr-summary">(${alignedCount}/${nfrEntries.length} aligned)</span>`;
+                        nfrEntries.forEach(([nid, info], idx) => {
+                            const bd = info.breakdown || {};
                             const coverage = Number(info.coverage ?? (info.aligned ? 1 : 0));
                             const status = (unaligned.includes(nid) || coverage < 1) ? 'Unaligned' : 'Aligned';
-                            const target = info.target ? ` <span class="nfr-target">${info.target}</span>` : '';
-                            nfrBlock += `<div class="nfr-item">`;
-                            nfrBlock += `<span class="nfr-score">${coverage}</span> <span class="nfr-id">${nid}</span> <span class="nfr-status ${status === 'Aligned' ? 'nfr-aligned' : 'nfr-unaligned'}">(${status})</span>${target}`;
+                            const target = info.target ? `<span class="nfr-target">${info.target}</span>` : '';
+                            const finalScore = (bd.final_score ?? info.score ?? 0).toFixed(4);
+                            const details = bd.details || {};
+                            const statusColor = status === 'Aligned' ? 'var(--success)' : 'var(--danger)';
+                            
+                            nfrBlock += `<div class="nfr-item" style="border-left: 4px solid ${statusColor}; padding-left: 12px; margin: 8px 0;">`;
+                            nfrBlock += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">`;
+                            nfrBlock += `<strong>${nid}</strong> <span style="color: ${statusColor}; font-weight: bold;">${finalScore}</span>`;
                             nfrBlock += `</div>`;
+                            nfrBlock += `<div style="font-size: 0.8em; color: var(--text-muted); margin-bottom: 6px;">${info.type} • ${target}</div>`;
+                            nfrBlock += `<details style="cursor: pointer; user-select: none;">`;
+                            nfrBlock += `<summary style="color: var(--accent-secondary); font-size: 0.85em; padding: 4px 0; outline: none;">Show calculation</summary>`;
+                            nfrBlock += `<div style="background: rgba(0,0,0,0.15); padding: 8px; border-radius: 3px; margin-top: 6px; font-size: 0.8em; font-family: monospace;">`;
+                            nfrBlock += `<div>Formula: score = evidence + interaction + style_bonus - penalty</div>`;
+                            nfrBlock += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px;">`;
+                            nfrBlock += `<div>Evidence Score: <strong>${(bd.evidence_score ?? 0).toFixed(4)}</strong></div>`;
+                            nfrBlock += `<div>Interaction Bonus: <strong>+${(bd.interaction_bonus ?? 0).toFixed(4)}</strong></div>`;
+                            nfrBlock += `<div>Style Bonus: <strong>+${(bd.style_bonus ?? 0).toFixed(4)}</strong></div>`;
+                            nfrBlock += `<div>Style Penalty: <strong>-${(bd.style_penalty ?? 0).toFixed(4)}</strong></div>`;
+                            nfrBlock += `</div>`;
+                            nfrBlock += `<div style="margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 6px;">`;
+                            nfrBlock += `<strong>Final Score: ${finalScore}</strong> (${status})`;
+                            nfrBlock += `</div>`;
+                            nfrBlock += `<div style="margin-top: 4px; font-size: 0.75em; color: var(--text-secondary);">`;
+                            nfrBlock += `High matches: ${details.high_hits || 0} | Medium: ${details.medium_hits || 0} | Implicit: ${details.implicit_hits || 0} | Style: ${details.style || 'N/A'}`;
+                            nfrBlock += `</div>`;
+                            nfrBlock += `</div></details></div>`;
                         });
                         nfrBlock += `</div>`;
                     }
-                } catch (e) { nfrBlock = ''; }
+                } catch (e) { console.error("NFR rendering error:", e); nfrBlock = ''; }
 
                 contentHtml = `
                 <div style="font-size: 1.5em; font-weight: 700; color: var(--primary); margin: 10px 0;">Phase 1 CAS: ${(s.PHASE1_CAS || 0).toFixed(4)}</div>
