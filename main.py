@@ -94,7 +94,23 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
                 "candidate_num": c.candidate_num,
                 "raw_text": c.raw_text,
                 "error": c.error or "Generation Failed",
-                "scores": {"CAS": 0, "RCR": 0, "NAS": 0, "SMI": 0, "LSCS": 0, "SCI": 0, "verdict": "Failed"},
+                "scores": {
+                    "PHASE1_CAS": 0,
+                    "CAS": 0,
+                    "RCR": 0,
+                    "NAS": 0,
+                    "SMI": 0,
+                    "LSCS": 0,
+                    "SCI": 0,
+                    "phase1_verdict": "Failed",
+                    "verdict": "Failed"
+                },
+                "llm": {
+                    "provider": getattr(c, "provider_name", ""),
+                    "duration_ms": c.duration_ms,
+                    "attempts": getattr(c, "attempts", []),
+                    "raw_text": c.raw_text,
+                },
                 "architecture": {"architecture_style": "Failed", "components": []}
             })
             continue
@@ -107,6 +123,12 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
                 "raw_text": c.raw_text,
                 "architecture": arch,
                 "scores": scores,
+                "llm": {
+                    "provider": getattr(c, "provider_name", ""),
+                    "duration_ms": c.duration_ms,
+                    "attempts": getattr(c, "attempts", []),
+                    "raw_text": c.raw_text,
+                },
                 "error": None
             })
         except ParseError as e:
@@ -116,7 +138,23 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
                 "candidate_num": c.candidate_num,
                 "raw_text": c.raw_text,
                 "error": f"Parse Error: {e}",
-                "scores": {"CAS": 0, "RCR": 0, "NAS": 0, "SMI": 0, "LSCS": 0, "SCI": 0, "verdict": "Parse Failed"},
+                "scores": {
+                    "PHASE1_CAS": 0,
+                    "CAS": 0,
+                    "RCR": 0,
+                    "NAS": 0,
+                    "SMI": 0,
+                    "LSCS": 0,
+                    "SCI": 0,
+                    "phase1_verdict": "Parse Failed",
+                    "verdict": "Parse Failed"
+                },
+                "llm": {
+                    "provider": getattr(c, "provider_name", ""),
+                    "duration_ms": c.duration_ms,
+                    "attempts": getattr(c, "attempts", []),
+                    "raw_text": c.raw_text,
+                },
                 "architecture": {"architecture_style": "Unparseable", "components": []}
             })
 
@@ -129,7 +167,7 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
         raise RuntimeError("No valid architecture candidates produced")
 
     notify("ranking", "Ranking candidates...")
-    ranked_valid = rank_candidates(valid_candidates)
+    ranked_valid = rank_candidates(valid_candidates, cas_key="PHASE1_CAS")
     
     # Append failed candidates at the bottom with rank -1
     for fc in failed_candidates:
@@ -144,20 +182,15 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
     
     update_run(run_id, status="pending_selection", total_candidates=len(ranked))
     
-    # Generate the group radar chart for the UI to use in Phase 1
-    radar_path = RESULTS_DIR / "radar_chart.png"
-    if ranked_valid:
-        generate_radar_chart(ranked_valid, str(radar_path), f"{project} — Tradeoff Comparison")
-
     # ATAM Trivial Decision Logic (Dominance Detection)
     dominant_winner = False
     if len(ranked_valid) >= 2:
-        top_cas = ranked_valid[0]["scores"].get("CAS", 0)
-        second_cas = ranked_valid[1]["scores"].get("CAS", 0)
+        top_cas = ranked_valid[0]["scores"].get("PHASE1_CAS", 0)
+        second_cas = ranked_valid[1]["scores"].get("PHASE1_CAS", 0)
         if top_cas >= 0.90 and (top_cas - second_cas) >= 0.10:
             dominant_winner = True
     elif len(ranked_valid) == 1:
-        if ranked_valid[0]["scores"].get("CAS", 0) >= 0.90:
+        if ranked_valid[0]["scores"].get("PHASE1_CAS", 0) >= 0.90:
             dominant_winner = True
 
     notify("done", "Phase 1 complete. Pending human selection.")
@@ -166,7 +199,6 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
     return {
         "run_id": run_id,
         "ranked_candidates": ranked,
-        "radar": str(radar_path) if ranked_valid else None,
         "dominant_winner": dominant_winner
     }
 
@@ -213,6 +245,10 @@ def elaborate_winner(run_id: str, selected_candidate: dict, input_file: str | Pa
     with open(mmd_path, "w", encoding="utf-8") as f:
         f.write(generate_mermaid(selected_candidate["architecture"], project))
 
+    # Phase 2 visualization artifact: full 5-metric radar for selected architecture.
+    radar_path = RESULTS_DIR / "radar_chart.png"
+    generate_radar_chart([selected_candidate], str(radar_path), f"{project} — Phase 2 Quality Profile")
+
     update_run(run_id, status="completed",
                winner_model=selected_candidate["model"], winner_cas=selected_candidate["scores"]["CAS"])
 
@@ -222,7 +258,7 @@ def elaborate_winner(run_id: str, selected_candidate: dict, input_file: str | Pa
     return {
         "run_id": run_id, "winner": selected_candidate,
         "outputs": {"winner_json": str(winner_path), "report": str(report_path),
-                     "plantuml": str(puml_path), "mermaid": str(mmd_path)},
+                     "plantuml": str(puml_path), "mermaid": str(mmd_path), "radar": str(radar_path)},
     }
 
 
@@ -242,7 +278,7 @@ if __name__ == "__main__":
     
     print(f"\nCandidates ready for ATAM Tradeoff Analysis: {len(phase1['ranked_candidates'])}")
     for c in phase1["ranked_candidates"]:
-        print(f"[{c['rank']}] {c['model']} (CAS: {c['scores']['CAS']:.4f})")
+        print(f"[{c['rank']}] {c['model']} (Phase1CAS: {c['scores']['PHASE1_CAS']:.4f})")
         
     print(f"\n{'='*50}")
     print("PHASE 2: ELABORATION")

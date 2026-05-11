@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+import csv
 import uvicorn
 
 from config import INPUT_DIR, RESULTS_DIR, WEB_DIR, MODELS, LLM_PROVIDER, PROVIDER_MODELS
@@ -133,6 +134,45 @@ async def get_winner(run_id: str):
         return json.load(f)
 
 
+@app.post("/api/runs/{run_id}/export_evidence")
+async def export_evidence(run_id: str):
+    """Export per-candidate NFR evidence and raw LLM text as CSV for auditing."""
+    run = get_run(run_id)
+    if not run:
+        raise HTTPException(404, "Run not found")
+
+    candidates = get_candidates(run_id)
+    if not candidates:
+        raise HTTPException(404, "No candidates found for run")
+
+    RESULTS_DIR.mkdir(exist_ok=True)
+    out_path = RESULTS_DIR / f"evidence_{run_id}.csv"
+
+    with open(out_path, "w", newline='', encoding="utf-8") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["candidate_id", "model", "candidate_num", "nfr_id", "nfr_type", "nfr_target", "nfr_score", "nfr_reasoning", "raw_text"])
+
+        for c in candidates:
+            cid = c.get("id") or ""
+            model = c.get("model", "")
+            cand_num = c.get("candidate_num", "")
+            scores = c.get("scores", {}) or {}
+            alignment_map = scores.get("alignment_map", {}) or {}
+            llm = c.get("llm", {}) or {}
+            raw = llm.get("raw_text", "")
+
+            # If alignment_map empty, write a single row per candidate
+            if not alignment_map:
+                writer.writerow([cid, model, cand_num, "", "", "", "", "", raw.replace('\n', ' ')])
+            else:
+                for nfr_id, info in alignment_map.items():
+                    writer.writerow([
+                        cid, model, cand_num, nfr_id, info.get("type", ""), info.get("target", ""), info.get("score", ""), info.get("reasoning", "").replace('\n',' '), raw.replace('\n', ' ')
+                    ])
+
+    return FileResponse(str(out_path), media_type="text/csv")
+
+
 # ─── WebSocket for Pipeline Execution ──────────────
 @app.websocket("/ws/pipeline")
 async def websocket_pipeline(ws: WebSocket):
@@ -171,6 +211,7 @@ async def websocket_pipeline(ws: WebSocket):
                     "candidate_num": c["candidate_num"],
                     "scores": c["scores"],
                     "architecture": c["architecture"],
+                    "llm": c.get("llm", {}),
                     "id": c.get("id", None) # if we need db id later
                 })
 
@@ -178,7 +219,6 @@ async def websocket_pipeline(ws: WebSocket):
                 "type": "phase1_complete",
                 "run_id": result["run_id"],
                 "candidates": ranked_data,
-                "radar_url": f"/api/results/{result['run_id']}/radar"
             })
         except Exception as e:
             await ws.send_json({"type": "error", "message": str(e)})
@@ -226,7 +266,23 @@ async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
             "candidate": {
                 "model": req.model, "candidate_num": req.candidate_num, "rank": -1,
                 "error": result.error or "Regeneration failed",
-                "scores": {"CAS": 0, "RCR": 0, "NAS": 0, "SMI": 0, "LSCS": 0, "SCI": 0, "verdict": "Failed"},
+                    "scores": {
+                        "PHASE1_CAS": 0,
+                        "CAS": 0,
+                        "RCR": 0,
+                        "NAS": 0,
+                        "SMI": 0,
+                        "LSCS": 0,
+                        "SCI": 0,
+                        "phase1_verdict": "Failed",
+                        "verdict": "Failed"
+                    },
+                    "llm": {
+                        "provider": getattr(result, "provider_name", ""),
+                        "duration_ms": result.duration_ms,
+                        "attempts": getattr(result, "attempts", []),
+                        "raw_text": result.raw_text,
+                    },
                 "architecture": {"architecture_style": "Failed", "components": []}
             }
         }
@@ -240,6 +296,12 @@ async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
                 "model": req.model, "candidate_num": req.candidate_num, "rank": -1,
                 "architecture": arch,
                 "scores": scores,
+                    "llm": {
+                        "provider": getattr(result, "provider_name", ""),
+                        "duration_ms": result.duration_ms,
+                        "attempts": getattr(result, "attempts", []),
+                        "raw_text": result.raw_text,
+                    },
                 "error": None
             }
         }
@@ -249,7 +311,23 @@ async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
             "candidate": {
                 "model": req.model, "candidate_num": req.candidate_num, "rank": -1,
                 "error": f"Parse Error: {e}",
-                "scores": {"CAS": 0, "RCR": 0, "NAS": 0, "SMI": 0, "LSCS": 0, "SCI": 0, "verdict": "Parse Failed"},
+                    "scores": {
+                        "PHASE1_CAS": 0,
+                        "CAS": 0,
+                        "RCR": 0,
+                        "NAS": 0,
+                        "SMI": 0,
+                        "LSCS": 0,
+                        "SCI": 0,
+                        "phase1_verdict": "Parse Failed",
+                        "verdict": "Parse Failed"
+                    },
+                    "llm": {
+                        "provider": getattr(result, "provider_name", ""),
+                        "duration_ms": result.duration_ms,
+                        "attempts": getattr(result, "attempts", []),
+                        "raw_text": result.raw_text,
+                    },
                 "architecture": {"architecture_style": "Unparseable", "components": []}
             }
         }
@@ -274,6 +352,7 @@ async def select_winner(run_id: str, req: SelectionRequest):
         )
         return {
             "status": "success",
+            "run_id": run_id,
             "outputs": result["outputs"],
             "winner": {
                 "model": result["winner"]["model"],

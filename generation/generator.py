@@ -43,13 +43,16 @@ class GenerationResult:
     """Holds the result of one LLM generation attempt."""
 
     def __init__(self, model: str, candidate_num: int, raw_text: str,
-                 success: bool, duration_ms: float, error: Optional[str] = None):
+                 success: bool, duration_ms: float, error: Optional[str] = None,
+                 provider_name: str = "", attempts: Optional[list] = None):
         self.model = model
         self.candidate_num = candidate_num
         self.raw_text = raw_text
         self.success = success
         self.duration_ms = duration_ms
         self.error = error
+        self.provider_name = provider_name
+        self.attempts = attempts or []
 
     def to_dict(self) -> dict:
         return {
@@ -59,6 +62,8 @@ class GenerationResult:
             "success": self.success,
             "duration_ms": self.duration_ms,
             "error": self.error,
+            "provider_name": self.provider_name,
+            "attempts": self.attempts,
         }
 
 
@@ -76,6 +81,7 @@ def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationRe
     """
     provider = get_provider_for_model(model)
     last_error = "Unknown error"
+    attempts = []
 
     for attempt in range(1, MAX_GENERATION_RETRIES + 1):
         try:
@@ -85,6 +91,11 @@ def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationRe
             )
 
             start_time = time.time()
+            attempts.append({
+                "attempt": attempt,
+                "status": "started",
+                "timestamp": time.time(),
+            })
 
             raw_text = provider.generate(prompt, model, GENERATION_OPTIONS)
 
@@ -92,7 +103,12 @@ def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationRe
 
             if not raw_text:
                 logger.warning(f"[{model}] Empty response on attempt {attempt}")
+                attempts[-1]["status"] = "empty"
                 continue
+
+            attempts[-1]["status"] = "success"
+            attempts[-1]["duration_ms"] = round(duration_ms, 2)
+            attempts[-1]["chars"] = len(raw_text)
 
             logger.info(
                 f"[{model}] Candidate {candidate_num} generated in {duration_ms:.0f}ms "
@@ -105,11 +121,16 @@ def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationRe
                 raw_text=raw_text,
                 success=True,
                 duration_ms=duration_ms,
+                provider_name=provider.provider_name,
+                attempts=attempts,
             )
 
         except Exception as e:
             last_error = str(e)
             logger.error(f"[{model}] Attempt {attempt} failed: {e}")
+            if attempts:
+                attempts[-1]["status"] = "failed"
+                attempts[-1]["error"] = str(e)
 
             if _is_non_retryable_error(e):
                 logger.error(f"[{model}] Non-retryable error detected, aborting retries.")
@@ -125,6 +146,8 @@ def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationRe
         success=False,
         duration_ms=0,
         error=last_error,
+        provider_name=provider.provider_name,
+        attempts=attempts,
     )
 
 

@@ -54,8 +54,10 @@ CANDIDATES_PER_MODEL = 2
 
 # Generation parameters (provider-agnostic)
 GENERATION_OPTIONS = {
-    "temperature": 0.7,
+    "temperature": 0.1,
     "max_tokens": 4000,
+    "top_p": 0.2,
+    "seed": 42,
 }
 
 # Retry configuration

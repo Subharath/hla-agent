@@ -28,9 +28,11 @@ class OllamaProvider(LLMProvider):
         """Generate architecture via local Ollama."""
         # Map generic options to Ollama-specific options
         ollama_options = {
-            "temperature": options.get("temperature", 0.7),
+            "temperature": options.get("temperature", 0.1),
             "num_ctx": 4096,
             "num_predict": options.get("max_tokens", 3000),
+            "top_p": options.get("top_p", 0.2),
+            "seed": options.get("seed", 42),
         }
 
         response = ollama.generate(

@@ -94,6 +94,8 @@ The JSON MUST follow this EXACT schema:
     # ── Layer 4: Constraint Specification ─────────────────
     constraint_layer = """
 ARCHITECTURE STYLE SELECTION — evaluate requirements FIRST, then choose:
+Use ONLY the canonical style options from Software Architecture Patterns, 2nd Edition (Mark Richards):
+Layered, Event-Driven, Microkernel, Microservices, Space-Based.
 - **Layered Architecture**: Best for systems with clear separation of concerns, moderate scale, CRUD-heavy workflows. DEFAULT choice unless requirements clearly demand otherwise.
 - **Event-Driven Architecture**: Best when requirements emphasize real-time notifications, async workflows, data streaming, or loosely coupled producers/consumers.
 - **Microkernel Architecture**: Best for extensible applications, product-based applications needing 3rd party plugins, or systems requiring isolated execution of dynamic rules.
@@ -136,8 +138,19 @@ QUALITY REQUIREMENTS:
 RESPOND WITH ONLY THE JSON. NO OTHER TEXT.
 """
 
+    # Explicit NFR evidence guidance — ensure the LLM includes auditable mappings
+    # in component responsibilities so deterministic NAS can find explicit traces.
+    # NOTE: This MUST remain a free-text instruction (output still strictly JSON).
+    explicit_nfr_instruction = (
+        "\nEXPLICIT NFR MAPPING REQUIREMENT:\n"
+        "For EVERY non-functional requirement above, include an explicit hint inside at least one component's 'responsibility'. "
+        "Use a short phrase such as 'Supports NFR [NFR_ID] via <mechanism>' or 'Handles [NFR_ID]: <mechanism>'. "
+        "Examples: 'Supports NFR NFR1 via Redis cache', 'Handles NFR NFR3: OAuth gateway + TLS'. "
+        "This makes NFR-handling auditable and machine-detectable for evaluation.\n"
+    )
+    parts = [role_layer, context_layer, schema_layer, constraint_layer, guardrail_layer, explicit_nfr_instruction]
+
     # ── Assemble the full prompt ──────────────────────────
-    parts = [role_layer, context_layer, schema_layer, constraint_layer, guardrail_layer]
 
     # ── Regeneration feedback (if applicable) ─────────────
     if feedback:
