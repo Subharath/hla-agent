@@ -6,6 +6,8 @@ Style-Aware Topological Consistency:
 - Layered: Enforces strict downward dependency (no sinkholes/upward calls).
 - Microservices: Enforces Gateway usage and penalizes tight cyclic dependencies.
 - Event-Driven: Enforces broker mediation (producers don't call consumers directly).
+- Microkernel: Enforces Core/Plugin separation and plugin isolation.
+- Space-Based: Enforces processing-unit mediation and discourages direct datastore coupling.
 """
 
 import logging
@@ -56,12 +58,55 @@ def _detect_layered_violations(architecture, interactions, clm):
 
 
 def _detect_microservice_violations(architecture, interactions, clm):
-    """Detect gateway bypass and point-to-point cyclic coupling in Microservices."""
+    """Detect microservice-specific structural issues.
+
+    Microservices LSCS should be more specific than generic layer checks:
+    - require API Gateway / edge entry point
+    - require Service Registry / discovery support
+    - flag frontend/client calls that bypass the gateway
+    - flag tight cyclic coupling between service components
+    """
     violations = []
-    gateways = set()
-    for c in architecture.get("components", []):
-        if any(k in c.get("name", "").lower() for k in ["gateway", "proxy", "router"]):
-            gateways.add(c["name"])
+
+    comps = architecture.get("components", [])
+    component_names = {c.get("name", "").strip() for c in comps if c.get("name", "").strip()}
+    lower_names = {name.lower() for name in component_names}
+
+    gateway_names = {
+        name for name in component_names
+        if any(k in name.lower() for k in ["api gateway", "gateway", "edge", "proxy", "router"])
+    }
+    registry_names = {
+        name for name in component_names
+        if any(k in name.lower() for k in ["service registry", "registry", "discovery", "eureka", "consul"])
+    }
+
+    if not gateway_names:
+        violations.append({
+            "from": "System", "to": "System",
+            "reason": "Microservices architecture missing API Gateway / edge entry point"
+        })
+
+    if not registry_names:
+        violations.append({
+            "from": "System", "to": "System",
+            "reason": "Microservices architecture missing Service Registry / discovery support"
+        })
+
+    def is_client_like(layer_name: str, component_name: str) -> bool:
+        layer_name = (layer_name or "").lower()
+        component_name = (component_name or "").lower()
+        return any(k in layer_name for k in ["presentation", "ui", "frontend", "client"]) or any(
+            k in component_name for k in ["ui", "frontend", "client", "web app", "webapp"]
+        )
+
+    def is_gateway_like(component_name: str) -> bool:
+        component_name = (component_name or "").lower()
+        return any(k in component_name for k in ["api gateway", "gateway", "edge", "proxy", "router"])
+
+    def is_service_like(component_name: str) -> bool:
+        component_name = (component_name or "").lower()
+        return component_name.endswith("service") or "service " in component_name or " service" in component_name
 
     # Build adjacency list for cycle detection
     adj = {}
@@ -70,23 +115,23 @@ def _detect_microservice_violations(architecture, interactions, clm):
         tc = inter.get("to", "").strip()
         adj.setdefault(fc, []).append(tc)
 
-        # Check Gateway bypass
+        # Check gateway bypass from client-facing entry points to internal services.
         fl = clm.get(fc, clm.get(fc.lower(), ""))
         tl = clm.get(tc, clm.get(tc.lower(), ""))
-        if fl.lower() in ("presentation", "ui", "frontend", "client"):
-            if tc not in gateways and gateways:
+        if is_client_like(fl, fc):
+            if not is_gateway_like(tc) and gateway_names:
                 violations.append({
                     "from": fc, "to": tc,
-                    "reason": f"Gateway bypass: UI directly calls internal service {tc}"
+                    "reason": f"Gateway bypass: client-facing component {fc} directly calls internal service {tc}"
                 })
 
-    # Simple length-2 cycle detection (A -> B and B -> A)
+    # Simple length-2 cycle detection only for service-like components.
     for u in adj:
         for v in adj[u]:
-            if u in adj.get(v, []):
+            if u in adj.get(v, []) and is_service_like(u) and is_service_like(v):
                 violations.append({
                     "from": u, "to": v,
-                    "reason": f"Cyclic dependency detected between {u} and {v}"
+                    "reason": f"Cyclic service coupling detected between {u} and {v}"
                 })
 
     # Remove duplicates from cycle detection
@@ -128,6 +173,79 @@ def _detect_event_driven_violations(architecture, interactions):
     return violations
 
 
+def _detect_microkernel_violations(architecture, interactions):
+    """Detect microkernel anti-patterns: plugin isolation breaks and missing core/kernel."""
+    violations = []
+    comps = architecture.get("components", [])
+
+    core_components = {
+        c.get("name", "") for c in comps
+        if any(k in c.get("name", "").lower() for k in ["core", "kernel"])
+    }
+    plugin_components = {
+        c.get("name", "") for c in comps
+        if any(k in c.get("name", "").lower() for k in ["plugin", "extension", "module"])
+    }
+
+    if not core_components:
+        violations.append({
+            "from": "System", "to": "System",
+            "reason": "Microkernel architecture missing Core/Kernel component"
+        })
+
+    for inter in interactions:
+        fc = inter.get("from", "").strip()
+        tc = inter.get("to", "").strip()
+
+        if fc in plugin_components and tc in plugin_components:
+            violations.append({
+                "from": fc, "to": tc,
+                "reason": f"Plugin-to-plugin coupling: {fc} -> {tc} (should prefer core mediation)"
+            })
+
+    return violations
+
+
+def _detect_space_based_violations(architecture, interactions):
+    """Detect space-based anti-patterns: missing processing units or direct DB-heavy service coupling."""
+    violations = []
+    comps = architecture.get("components", [])
+
+    processing_units = {
+        c.get("name", "") for c in comps
+        if any(k in c.get("name", "").lower() for k in ["processing unit", "processor", "pu"])
+    }
+    data_grid = {
+        c.get("name", "") for c in comps
+        if any(k in c.get("name", "").lower() for k in ["grid", "cache", "space", "middleware"])
+    }
+
+    if not processing_units:
+        violations.append({
+            "from": "System", "to": "System",
+            "reason": "Space-Based architecture missing Processing Unit component"
+        })
+
+    if not data_grid:
+        violations.append({
+            "from": "System", "to": "System",
+            "reason": "Space-Based architecture missing in-memory grid/virtualized middleware"
+        })
+
+    for inter in interactions:
+        fc = inter.get("from", "").strip().lower()
+        tc = inter.get("to", "").strip().lower()
+        db_like = any(k in tc for k in ["database", "sql", "repository"]) or any(k in fc for k in ["database", "sql", "repository"])
+        if db_like:
+            violations.append({
+                "from": inter.get("from", ""),
+                "to": inter.get("to", ""),
+                "reason": "Direct datastore-oriented coupling is discouraged in Space-Based style"
+            })
+
+    return violations
+
+
 def compute_lscs(architecture):
     interactions = architecture.get("interactions", [])
     if not interactions:
@@ -140,6 +258,10 @@ def compute_lscs(architecture):
         violations = _detect_microservice_violations(architecture, interactions, clm)
     elif "event" in style:
         violations = _detect_event_driven_violations(architecture, interactions)
+    elif "microkernel" in style or "plugin" in style:
+        violations = _detect_microkernel_violations(architecture, interactions)
+    elif "space" in style:
+        violations = _detect_space_based_violations(architecture, interactions)
     else:
         # Default to Layered structural rules
         violations = _detect_layered_violations(architecture, interactions, clm)

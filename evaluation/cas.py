@@ -10,7 +10,7 @@ Provides:
 """
 
 import logging
-from config import PHASE1_WEIGHTS, PHASE2_WEIGHTS, CAS_ACCEPTED, CAS_MARGINAL, THRESHOLDS
+from config import PHASE1_WEIGHTS, PHASE2_WEIGHTS, WEIGHTS, CAS_ACCEPTED, CAS_MARGINAL, THRESHOLDS
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,41 @@ def compute_cas(scores: dict, phase: int = 1) -> dict:
     }
 
 
-def rank_candidates(candidates: list[dict]) -> list[dict]:
+def compute_final_cas(scores: dict) -> dict:
+    """
+    Compute final 5-metric CAS used in Phase 2 (HLD validation).
+
+    CAS = 0.25*RCR + 0.25*NAS + 0.20*SMI + 0.15*LSCS + 0.15*SCI
+    """
+    weighted = {}
+    cas = 0.0
+
+    for metric, weight in WEIGHTS.items():
+        value = scores.get(metric, 0.0)
+        w_value = value * weight
+        weighted[metric] = round(w_value, 4)
+        cas += w_value
+
+    cas = round(cas, 4)
+
+    if cas >= CAS_ACCEPTED:
+        verdict = "Accepted"
+    elif cas >= CAS_MARGINAL:
+        verdict = "Marginal"
+    else:
+        verdict = "Poor"
+
+    below = [m for m, s in scores.items() if m in THRESHOLDS and s < THRESHOLDS[m]]
+
+    return {
+        "cas": cas,
+        "verdict": verdict,
+        "weighted_breakdown": weighted,
+        "below_threshold": below,
+    }
+
+
+def rank_candidates(candidates: list[dict], cas_key: str = "PHASE1_CAS") -> list[dict]:
     """
     Rank architecture candidates by CAS score (descending).
 
@@ -80,7 +114,7 @@ def rank_candidates(candidates: list[dict]) -> list[dict]:
     """
     sorted_candidates = sorted(
         candidates,
-        key=lambda c: c.get("scores", {}).get("CAS", 0),
+        key=lambda c: c.get("scores", {}).get(cas_key, 0),
         reverse=True,
     )
 
@@ -91,7 +125,7 @@ def rank_candidates(candidates: list[dict]) -> list[dict]:
         winner = sorted_candidates[0]
         logger.info(
             f"Winner: {winner.get('model', '?')} candidate "
-            f"{winner.get('candidate_num', '?')} with CAS={winner['scores']['CAS']:.4f}"
+            f"{winner.get('candidate_num', '?')} with {cas_key}={winner['scores'].get(cas_key, 0):.4f}"
         )
 
     return sorted_candidates

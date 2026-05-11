@@ -8,7 +8,7 @@ from evaluation.nas import compute_nas
 from evaluation.smi import compute_smi
 from evaluation.lscs import compute_lscs
 from evaluation.sci import compute_sci
-from evaluation.cas import compute_cas, rank_candidates
+from evaluation.cas import compute_cas, compute_final_cas, rank_candidates
 
 
 def evaluate_architecture(architecture: dict, requirements: dict) -> dict:
@@ -41,19 +41,23 @@ def evaluate_architecture(architecture: dict, requirements: dict) -> dict:
         "SCI": sci_result["score"],
     }
 
-    cas_result = compute_cas(scores, phase=1)
+    phase1_cas_result = compute_cas(scores, phase=1)
+    final_cas_result = compute_final_cas(scores)
 
     return {
         **scores,
-        "CAS": cas_result["cas"],
-        "verdict": cas_result["verdict"],
+        "PHASE1_CAS": phase1_cas_result["cas"],
+        "CAS": final_cas_result["cas"],
+        "phase1_verdict": phase1_cas_result["verdict"],
+        "verdict": final_cas_result["verdict"],
         "details": {
             "rcr": rcr_result,
             "nas": nas_result,
             "smi": smi_result,
             "lscs": lscs_result,
             "sci": sci_result,
-            "cas": cas_result,
+            "phase1_cas": phase1_cas_result,
+            "cas": final_cas_result,
         },
     }
 
@@ -66,5 +70,6 @@ __all__ = [
     "compute_lscs",
     "compute_sci",
     "compute_cas",
+    "compute_final_cas",
     "rank_candidates",
 ]
