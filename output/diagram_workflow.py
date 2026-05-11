@@ -28,6 +28,8 @@ from output.llm_diagram_gen import (
     unified_diff,
 )
 from output.mermaid_gen import generate_mermaid
+from output.diagram_evaluator import evaluate_diagram_with_metrics
+from output.side_by_side_diff import generate_side_by_side_diff
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +100,14 @@ def ensure_initial_plantuml(
     architecture: dict,
     requirements: dict,
     title: str,
+    use_research_metrics: bool = True,
 ) -> dict:
-    """Ensure a PlantUML v1 exists for this run (LLM-generated + scored)."""
+    """Ensure a PlantUML v1 exists for this run (LLM-generated + scored).
+    
+    Args:
+        use_research_metrics: If True, use full RCR/NAS/SMI/LSCS/SCI evaluation.
+                             If False, use lightweight proxy scoring.
+    """
 
     existing = load_workflow()
     if existing and existing.get("run_id") == run_id and existing.get("plantuml", {}).get("current"):
@@ -110,7 +118,23 @@ def ensure_initial_plantuml(
         with open(PLANTUML_PATH, "r", encoding="utf-8") as f:
             seeded = f.read()
         seeded = extract_diagram_source("plantuml", seeded)
-        diagram_cas, breakdown, issues = evaluate_diagram("plantuml", seeded, architecture)
+        
+        # Use research-grade metrics for evaluation
+        if use_research_metrics:
+            eval_result = evaluate_diagram_with_metrics(
+                diagram=seeded,
+                kind="plantuml",
+                architecture=architecture,
+                requirements=requirements,
+            )
+            diagram_cas = eval_result["diagram_cas"]
+            breakdown = eval_result["scores"]
+            issues = eval_result["issues"]
+            metrics_detail = eval_result["metrics"]
+        else:
+            diagram_cas, breakdown, issues = evaluate_diagram("plantuml", seeded, architecture)
+            metrics_detail = None
+        
         provider_name = get_provider_for_model(model).provider_name
         state = _init_state(run_id=run_id, model=model, provider_name=provider_name)
         attempt = {
@@ -122,6 +146,7 @@ def ensure_initial_plantuml(
             "diagram_cas": diagram_cas,
             "breakdown": breakdown,
             "issues": issues,
+            "metrics_detail": metrics_detail,
         }
         _append_history(state, kind="plantuml", attempt=attempt)
         _set_current(state, kind="plantuml", attempt=attempt, diff_text="")
@@ -141,7 +166,22 @@ def ensure_initial_plantuml(
 
     raw = provider.generate(prompt, model=model, options=DIAGRAM_GENERATION_OPTIONS)
     plantuml = extract_diagram_source("plantuml", raw)
-    diagram_cas, breakdown, issues = evaluate_diagram("plantuml", plantuml, architecture)
+    
+    # Use research-grade metrics
+    if use_research_metrics:
+        eval_result = evaluate_diagram_with_metrics(
+            diagram=plantuml,
+            kind="plantuml",
+            architecture=architecture,
+            requirements=requirements,
+        )
+        diagram_cas = eval_result["diagram_cas"]
+        breakdown = eval_result["scores"]
+        issues = eval_result["issues"]
+        metrics_detail = eval_result["metrics"]
+    else:
+        diagram_cas, breakdown, issues = evaluate_diagram("plantuml", plantuml, architecture)
+        metrics_detail = None
 
     attempt = {
         "timestamp": _now_iso(),
@@ -152,6 +192,7 @@ def ensure_initial_plantuml(
         "diagram_cas": diagram_cas,
         "breakdown": breakdown,
         "issues": issues,
+        "metrics_detail": metrics_detail,
     }
 
     state["plantuml"]["llm_iterations_used"] = 1
@@ -163,16 +204,41 @@ def ensure_initial_plantuml(
     return state
 
 
-def score_manual_plantuml_edit(*, run_id: str, plantuml: str, architecture: dict) -> dict:
+def score_manual_plantuml_edit(*, run_id: str, plantuml: str, architecture: dict, requirements: dict) -> dict:
     state = load_workflow()
     if not state or state.get("run_id") != run_id:
         raise ValueError("Diagram workflow not initialized for this run")
 
     prev = (state.get("plantuml", {}).get("current") or {}).get("diagram") or ""
     cleaned = extract_diagram_source("plantuml", plantuml)
-    diagram_cas, breakdown, issues = evaluate_diagram("plantuml", cleaned, architecture)
+    
+    # Use research-grade metrics
+    eval_result = evaluate_diagram_with_metrics(
+        diagram=cleaned,
+        kind="plantuml",
+        architecture=architecture,
+        requirements=requirements,
+    )
+    diagram_cas = eval_result["diagram_cas"]
+    breakdown = eval_result["scores"]
+    issues = eval_result["issues"]
+    metrics_detail = eval_result["metrics"]
 
-    diff_text = unified_diff(prev, cleaned, from_name="plantuml_prev", to_name="plantuml_edit") if prev else ""
+    # Generate side-by-side diff
+    if prev:
+        diff_result = generate_side_by_side_diff(
+            old_content=prev,
+            new_content=cleaned,
+            old_label="plantuml_prev",
+            new_label="plantuml_edit",
+        )
+        diff_text = diff_result["unified"]
+        diff_html = diff_result["html"]
+        diff_stats = diff_result["statistics"]
+    else:
+        diff_text = ""
+        diff_html = ""
+        diff_stats = {}
 
     attempt = {
         "timestamp": _now_iso(),
@@ -183,7 +249,10 @@ def score_manual_plantuml_edit(*, run_id: str, plantuml: str, architecture: dict
         "diagram_cas": diagram_cas,
         "breakdown": breakdown,
         "issues": issues,
+        "metrics_detail": metrics_detail,
         "diff": diff_text,
+        "diff_html": diff_html,
+        "diff_stats": diff_stats,
     }
 
     _append_history(state, kind="plantuml", attempt=attempt)
@@ -237,9 +306,29 @@ def improve_plantuml_with_llm(
 
     raw = provider.generate(prompt, model=model, options=DIAGRAM_GENERATION_OPTIONS)
     plantuml = extract_diagram_source("plantuml", raw)
-    diagram_cas, breakdown, issues = evaluate_diagram("plantuml", plantuml, architecture)
+    
+    # Use research-grade metrics
+    eval_result = evaluate_diagram_with_metrics(
+        diagram=plantuml,
+        kind="plantuml",
+        architecture=architecture,
+        requirements=requirements,
+    )
+    diagram_cas = eval_result["diagram_cas"]
+    breakdown = eval_result["scores"]
+    issues = eval_result["issues"]
+    metrics_detail = eval_result["metrics"]
 
-    diff_text = unified_diff(prev_diagram, plantuml, from_name="plantuml_v1", to_name="plantuml_v2")
+    # Generate side-by-side diff
+    diff_result = generate_side_by_side_diff(
+        old_content=prev_diagram,
+        new_content=plantuml,
+        old_label="plantuml_v1",
+        new_label="plantuml_v2",
+    )
+    diff_text = diff_result["unified"]
+    diff_html = diff_result["html"]
+    diff_stats = diff_result["statistics"]
 
     attempt = {
         "timestamp": _now_iso(),
@@ -250,7 +339,10 @@ def improve_plantuml_with_llm(
         "diagram_cas": diagram_cas,
         "breakdown": breakdown,
         "issues": issues,
+        "metrics_detail": metrics_detail,
         "diff": diff_text,
+        "diff_html": diff_html,
+        "diff_stats": diff_stats,
         "user_notes": (user_notes or "").strip() or None,
     }
 

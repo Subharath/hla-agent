@@ -710,27 +710,122 @@ function renderDiagramWorkflow(wf) {
 
     document.getElementById('plantumlStatus').textContent = `provider=${wf.provider || 'N/A'} • model=${wf.model || 'N/A'} • approved=${approved} • llm_iterations=${used}/${max}`;
 
+    // Research-grade metrics display
+    const metricsResearch = document.getElementById('plantumlMetricsResearch');
+    const metricsDetail = puCur.metrics_detail || {};
+    const scores = puCur.breakdown || {};
+    
+    if (metricsDetail && Object.keys(metricsDetail).length > 0) {
+        metricsResearch.innerHTML = '';
+        
+        // Display all 5 metrics
+        ['RCR', 'NAS', 'SMI', 'LSCS', 'SCI'].forEach(metric => {
+            const score = scores[metric] || 0;
+            const detail = metricsDetail[metric] || {};
+            const scoreClass = score >= 0.8 ? 'high' : score >= 0.6 ? 'medium' : 'low';
+            
+            let detailsHtml = '';
+            if (metric === 'RCR') {
+                const covered = detail.covered || 0;
+                const total = detail.total || 0;
+                const uncovered = detail.uncovered || [];
+                detailsHtml = `
+                    <details class="metric-details">
+                        <summary>Coverage Details</summary>
+                        <div class="metric-breakdown">
+                            <div class="breakdown-item"><span class="breakdown-label">Covered:</span><span class="breakdown-value">${covered}/${total}</span></div>
+                            ${uncovered.length > 0 ? `<div class="breakdown-item"><span class="breakdown-label">Uncovered:</span><span class="breakdown-value">${uncovered.join(', ')}</span></div>` : ''}
+                        </div>
+                    </details>
+                `;
+            } else if (metric === 'NAS') {
+                const aligned = detail.aligned_count || 0;
+                const unaligned = detail.unaligned || [];
+                detailsHtml = `
+                    <details class="metric-details">
+                        <summary>Alignment Details</summary>
+                        <div class="metric-breakdown">
+                            <div class="breakdown-item"><span class="breakdown-label">Aligned NFRs:</span><span class="breakdown-value">${aligned}</span></div>
+                            ${unaligned.length > 0 ? `<div class="breakdown-item"><span class="breakdown-label">Unaligned:</span><span class="breakdown-value">${unaligned.join(', ')}</span></div>` : ''}
+                        </div>
+                    </details>
+                `;
+            } else if (metric === 'SMI') {
+                const instability = detail.average_instability || 0;
+                detailsHtml = `
+                    <details class="metric-details">
+                        <summary>Modularity Details</summary>
+                        <div class="metric-breakdown">
+                            <div class="breakdown-item"><span class="breakdown-label">Avg Instability:</span><span class="breakdown-value">${instability.toFixed(4)}</span></div>
+                        </div>
+                    </details>
+                `;
+            } else if (metric === 'LSCS') {
+                const violations = detail.violations || 0;
+                detailsHtml = `
+                    <details class="metric-details">
+                        <summary>Consistency Details</summary>
+                        <div class="metric-breakdown">
+                            <div class="breakdown-item"><span class="breakdown-label">Violations:</span><span class="breakdown-value">${violations}</span></div>
+                        </div>
+                    </details>
+                `;
+            } else if (metric === 'SCI') {
+                const valid = detail.valid || 0;
+                const total = detail.total || 0;
+                detailsHtml = `
+                    <details class="metric-details">
+                        <summary>Clarity Details</summary>
+                        <div class="metric-breakdown">
+                            <div class="breakdown-item"><span class="breakdown-label">Valid Components:</span><span class="breakdown-value">${valid}/${total}</span></div>
+                        </div>
+                    </details>
+                `;
+            }
+            
+            metricsResearch.innerHTML += `
+                <div class="metric-research">
+                    <div class="label">${metric}</div>
+                    <div class="value ${scoreClass}">${score.toFixed(4)}</div>
+                    ${detailsHtml}
+                </div>
+            `;
+        });
+        
+        metricsResearch.classList.remove('hidden');
+    } else {
+        metricsResearch.classList.add('hidden');
+    }
+
+    // Legacy metrics display
     const metrics = document.getElementById('plantumlMetrics');
     const cas = Number(puCur.diagram_cas || 0);
     const b = puCur.breakdown || {};
     metrics.innerHTML = `
         <div class="diagram-metric"><div class="k">Diagram_CAS</div><div class="v">${cas.toFixed(4)}</div></div>
-        <div class="diagram-metric"><div class="k">Syntax OK</div><div class="v">${String(!!b.syntax_ok)}</div></div>
-        <div class="diagram-metric"><div class="k">Component Coverage</div><div class="v">${Number(b.component_coverage || 0).toFixed(4)}</div></div>
-        <div class="diagram-metric"><div class="k">Interaction Coverage</div><div class="v">${Number(b.interaction_coverage || 0).toFixed(4)}</div></div>
-        <div class="diagram-metric"><div class="k">Style Alignment</div><div class="v">${Number(b.style_alignment || 0).toFixed(4)}</div></div>
     `;
 
     const editor = document.getElementById('plantumlEditor');
     editor.value = puCur.diagram || '';
     editor.disabled = approved;
 
+    // Side-by-side diff display
+    const diffHtmlContainer = document.getElementById('plantumlDiffHtml');
     const diffBox = document.getElementById('plantumlDiff');
-    const diff = (pu.last_diff || '').trim();
-    if (diff) {
+    
+    const diffHtml = puCur.diff_html || pu.last_diff_html || '';
+    const diff = puCur.diff || pu.last_diff || '';
+    
+    if (diffHtml) {
+        diffHtmlContainer.innerHTML = diffHtml;
+        diffHtmlContainer.classList.remove('hidden');
+    } else if (diff.trim()) {
+        // Fallback to colorized unified diff
+        diffHtmlContainer.innerHTML = '<p style="color: var(--text-muted); padding: 20px; text-align: center;">Side-by-side diff not available. See unified diff below.</p>';
         diffBox.innerHTML = colorizeDiff(diff);
     } else {
-        diffBox.textContent = 'No diff available yet. Make an edit or request iteration 2.';
+        diffHtmlContainer.innerHTML = '<p style="color: var(--text-muted); padding: 20px; text-align: center;">No diff available yet. Make an edit or request iteration 2.</p>';
+        diffBox.textContent = 'No diff available yet.';
     }
 
     // Buttons

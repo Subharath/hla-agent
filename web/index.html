@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/diff_styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -219,23 +220,34 @@
                 <div id="plantumlPanel" class="hidden">
                     <div class="diagram-workflow-header">
                         <div>
-                            <div class="diagram-workflow-title">PlantUML — Manual Iteration</div>
+                            <div class="diagram-workflow-title">PlantUML — Research-Grade Evaluation</div>
                             <div class="diagram-workflow-sub" id="plantumlStatus"></div>
                         </div>
                         <div class="diagram-workflow-actions">
-                            <button class="run-btn" id="plantumlRescoreBtn" onclick="rescorePlantUml()">Rescore</button>
-                            <button class="run-btn" id="plantumlImproveBtn" onclick="improvePlantUml()">Ask LLM (Iteration 2)</button>
+                            <!--button class="run-btn" id="plantumlRescoreBtn" onclick="rescorePlantUml()">Rescore</button--->
+                            <button class="run-btn" id="plantumlImproveBtn" onclick="improvePlantUml()">Ask LLM (Iteration)</button>
                             <button class="run-btn" id="plantumlApproveBtn" onclick="approvePlantUml()">Approve PlantUML</button>
                         </div>
                     </div>
+
+                    <!-- Research-Grade Metrics -->
+                    <div class="diagram-metrics-research" id="plantumlMetricsResearch"></div>
 
                     <div class="diagram-metrics" id="plantumlMetrics"></div>
 
                     <label class="diagram-label" for="plantumlEditor">PlantUML Source (editable)</label>
                     <textarea id="plantumlEditor" class="diagram-editor" spellcheck="false"></textarea>
 
-                    <label class="diagram-label" for="plantumlDiff">Diff (previous → current)</label>
-                    <pre id="plantumlDiff" class="diagram-diff"></pre>
+                    <label class="diagram-label" for="plantumlDiff">Side-by-Side Diff (previous → current)</label>
+                    <div id="plantumlDiffContainer" class="diff-container">
+                        <div id="plantumlDiffHtml"></div>
+                    </div>
+                    
+                    <!-- Fallback unified diff -->
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: var(--text-muted); font-size: 12px;">Show unified diff (legacy)</summary>
+                        <pre id="plantumlDiff" class="diagram-diff" style="margin-top: 10px;"></pre>
+                    </details>
                 </div>
 
                 <!-- Back-compat (kept hidden) -->
