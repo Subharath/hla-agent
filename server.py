@@ -23,6 +23,15 @@ from storage.db import get_all_runs, get_run, get_candidates
 from generation.generator import check_models_available
 from providers import get_provider_name
 
+from output.diagram_workflow import (
+    load_workflow,
+    public_workflow_view,
+    score_manual_plantuml_edit,
+    improve_plantuml_with_llm,
+    approve_plantuml_and_generate_mermaid,
+    ensure_initial_plantuml,
+)
+
 logger = logging.getLogger("HLA-Server")
 
 
@@ -125,6 +134,114 @@ async def get_diagram(run_id: str, dtype: str):
         return {"type": dtype, "content": f.read()}
 
 
+def _load_requirements_for_run() -> dict:
+    path = RESULTS_DIR / "_temp_input.json"
+    if not path.exists():
+        raise HTTPException(404, "Input requirements not found")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _load_winner_for_run() -> dict:
+    path = RESULTS_DIR / "winner.json"
+    if not path.exists():
+        raise HTTPException(404, "Winner not found")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@app.get("/api/results/{run_id}/diagram_workflow")
+async def get_diagram_workflow(run_id: str):
+    state = load_workflow()
+    if not state or state.get("run_id") != run_id:
+        raise HTTPException(404, "Diagram workflow not found")
+    return public_workflow_view(state)
+
+
+@app.post("/api/runs/{run_id}/diagram/plantuml/score")
+async def score_plantuml_manual(run_id: str, payload: dict):
+    """User submits manual PlantUML edits for deterministic rescoring + diff."""
+    diagram = (payload or {}).get("diagram")
+    if not isinstance(diagram, str) or not diagram.strip():
+        raise HTTPException(400, "Missing 'diagram' PlantUML source")
+
+    winner = _load_winner_for_run()
+    architecture = winner.get("architecture") or {}
+
+    # Ensure workflow exists.
+    reqs = _load_requirements_for_run()
+    project = reqs.get("project", "System")
+    ensure_initial_plantuml(
+        run_id=run_id,
+        model=winner.get("model", ""),
+        architecture=architecture,
+        requirements=reqs,
+        title=project,
+    )
+
+    state = score_manual_plantuml_edit(run_id=run_id, plantuml=diagram, architecture=architecture)
+    return public_workflow_view(state)
+
+
+@app.post("/api/runs/{run_id}/diagram/plantuml/improve")
+async def improve_plantuml(run_id: str, payload: dict | None = None):
+    """Ask LLM for PlantUML iteration 2 (max 2 LLM iterations total)."""
+    winner = _load_winner_for_run()
+    architecture = winner.get("architecture") or {}
+    model = winner.get("model", "")
+    reqs = _load_requirements_for_run()
+    project = reqs.get("project", "System")
+
+    ensure_initial_plantuml(
+        run_id=run_id,
+        model=model,
+        architecture=architecture,
+        requirements=reqs,
+        title=project,
+    )
+
+    user_notes = None
+    if isinstance(payload, dict):
+        user_notes = (payload.get("notes") or "").strip() or None
+
+    state = improve_plantuml_with_llm(
+        run_id=run_id,
+        model=model,
+        architecture=architecture,
+        requirements=reqs,
+        title=project,
+        user_notes=user_notes,
+    )
+    return public_workflow_view(state)
+
+
+@app.post("/api/runs/{run_id}/diagram/plantuml/approve")
+async def approve_plantuml(run_id: str):
+    """Approve PlantUML and generate Mermaid as the final step."""
+    winner = _load_winner_for_run()
+    architecture = winner.get("architecture") or {}
+    model = winner.get("model", "")
+    reqs = _load_requirements_for_run()
+    project = reqs.get("project", "System")
+
+    ensure_initial_plantuml(
+        run_id=run_id,
+        model=model,
+        architecture=architecture,
+        requirements=reqs,
+        title=project,
+    )
+
+    state = approve_plantuml_and_generate_mermaid(
+        run_id=run_id,
+        model=model,
+        architecture=architecture,
+        requirements=reqs,
+        title=project,
+    )
+    return public_workflow_view(state)
+
+
 @app.get("/api/results/{run_id}/winner")
 async def get_winner(run_id: str):
     path = RESULTS_DIR / "winner.json"
@@ -132,6 +249,15 @@ async def get_winner(run_id: str):
         raise HTTPException(404, "Winner not found")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+@app.get("/api/results/{run_id}/diagram_iterations_diff")
+async def get_diagram_iterations_diff(run_id: str):
+    """Return the v1→v2 diagram unified diff markdown (if present)."""
+    path = RESULTS_DIR / "diagram_iterations_diff.md"
+    if not path.exists():
+        raise HTTPException(404, "Diagram diff not found")
+    return FileResponse(str(path), media_type="text/markdown")
 
 
 @app.post("/api/runs/{run_id}/export_evidence")
@@ -354,6 +480,7 @@ async def select_winner(run_id: str, req: SelectionRequest):
             "status": "success",
             "run_id": run_id,
             "outputs": result["outputs"],
+            "diagram_workflow": result.get("diagram_workflow"),
             "winner": {
                 "model": result["winner"]["model"],
                 "scores": result["winner"]["scores"],

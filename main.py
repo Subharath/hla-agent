@@ -24,6 +24,7 @@ from output.report import generate_report
 from output.plantuml_gen import generate_plantuml
 from output.mermaid_gen import generate_mermaid
 from output.radar import generate_radar_chart
+from output.diagram_workflow import ensure_initial_plantuml, public_workflow_view
 from storage.db import create_run, update_run, insert_candidate
 
 logging.basicConfig(
@@ -234,16 +235,30 @@ def elaborate_winner(run_id: str, selected_candidate: dict, input_file: str | Pa
     # Note: generate_report technically needs the ranked list, but we can just pass the winner as a single-item list
     # or recreate it. For now, we pass the winner.
     report_path = RESULTS_DIR / "evaluation_report.md"
-    with open(report_path, "w", encoding="utf-8") as f:
-        f.write(generate_report([selected_candidate], requirements, run_id))
 
+    # Diagram workflow (manual):
+    # 1) Generate initial PlantUML via LLM + score it.
+    # 2) User can iteratively edit/rescore (and optionally request ONE LLM improvement).
+    # 3) Mermaid is generated only after explicit PlantUML approval.
+    diagram_meta = None
     puml_path = RESULTS_DIR / "diagram.puml"
-    with open(puml_path, "w", encoding="utf-8") as f:
-        f.write(generate_plantuml(selected_candidate["architecture"], project))
+    try:
+        state = ensure_initial_plantuml(
+            run_id=run_id,
+            model=selected_candidate["model"],
+            architecture=selected_candidate["architecture"],
+            requirements=requirements,
+            title=project,
+        )
+        diagram_meta = {"diagram_workflow": public_workflow_view(state)}
+    except Exception as e:
+        logger.warning(f"Initial PlantUML generation failed; falling back to deterministic PlantUML: {e}")
+        with open(puml_path, "w", encoding="utf-8") as f:
+            f.write(generate_plantuml(selected_candidate["architecture"], project))
+        diagram_meta = {"diagram_workflow": {"error": str(e), "fallback": True}}
 
-    mmd_path = RESULTS_DIR / "diagram.mmd"
-    with open(mmd_path, "w", encoding="utf-8") as f:
-        f.write(generate_mermaid(selected_candidate["architecture"], project))
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(generate_report([selected_candidate], requirements, run_id, diagram_meta=diagram_meta))
 
     # Phase 2 visualization artifact: full 5-metric radar for selected architecture.
     radar_path = RESULTS_DIR / "radar_chart.png"
@@ -256,9 +271,15 @@ def elaborate_winner(run_id: str, selected_candidate: dict, input_file: str | Pa
     logger.info(f"✅ Elaboration complete! Run ID: {run_id}")
 
     return {
-        "run_id": run_id, "winner": selected_candidate,
-        "outputs": {"winner_json": str(winner_path), "report": str(report_path),
-                     "plantuml": str(puml_path), "mermaid": str(mmd_path), "radar": str(radar_path)},
+        "run_id": run_id,
+        "winner": selected_candidate,
+        "diagram_workflow": (diagram_meta or {}).get("diagram_workflow"),
+        "outputs": {
+            "winner_json": str(winner_path),
+            "report": str(report_path),
+            "plantuml": str(puml_path),
+            "radar": str(radar_path),
+        },
     }
 
 

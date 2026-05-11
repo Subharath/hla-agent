@@ -8,7 +8,8 @@ let currentRequirements = null;
 let currentResults = null;
 let radarChartInstance = null;
 let ws = null;
-let previousPlantUmlCode = '';
+let currentRunId = null;
+let diagramWorkflow = null;
 
 // ─── Init ─────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -281,10 +282,16 @@ function displayTradeoffPhase(data) {
     document.getElementById('resultsRunId').textContent = `Run ID: ${data.run_id} — Pending ATAM Tradeoff Selection`;
     document.getElementById('diagrams-section').classList.add('hidden');
     document.getElementById('mermaidDiagram').innerHTML = '';
-    document.getElementById('plantumlDiagram').textContent = '';
+    document.getElementById('mermaidCode').textContent = '';
+    document.getElementById('mermaidCode').classList.add('hidden');
+
+    document.getElementById('plantumlPanel').classList.add('hidden');
+    document.getElementById('plantumlEditor').value = '';
     document.getElementById('plantumlDiff').textContent = '';
-    document.getElementById('plantumlDiff').classList.add('hidden');
-    previousPlantUmlCode = '';
+    document.getElementById('plantumlStatus').textContent = '';
+    document.getElementById('plantumlMetrics').innerHTML = '';
+    diagramWorkflow = null;
+    currentRunId = null;
     
     // Hide winner card, show tradeoff card
     document.getElementById('winnerCard').classList.add('hidden');
@@ -512,6 +519,7 @@ function displayFinalWinner(data) {
     
     // Auto-switch to diagrams
     if (data.outputs) {
+        currentRunId = data.run_id;
         loadDiagrams(data);
     }
 }
@@ -668,87 +676,7 @@ function renderRadarChart(candidates) {
 async function loadDiagrams(data) {
     const diagramSection = document.getElementById('diagrams-section');
     diagramSection.classList.remove('hidden');
-
-    // Render Mermaid from winner architecture
-    const arch = data.winner.architecture;
-    let mmdCode = 'flowchart TD\n';
-    const layerComps = {};
-    arch.components.forEach(c => {
-        if (!layerComps[c.layer]) layerComps[c.layer] = [];
-        layerComps[c.layer].push(c);
-    });
-
-    arch.layers.forEach(l => {
-        const safe = l.name.replace(/\s+/g, '_');
-        const comps = layerComps[l.name] || [];
-        mmdCode += `    subgraph ${safe}["${l.name}"]\n`;
-        comps.forEach(c => {
-            const cid = c.name.replace(/\s+/g, '_');
-            mmdCode += `        ${cid}["${c.name}"]\n`;
-        });
-        mmdCode += '    end\n';
-    });
-
-    arch.interactions.forEach(inter => {
-        const from = inter.from.replace(/\s+/g, '_');
-        const to = inter.to.replace(/\s+/g, '_');
-        mmdCode += `    ${from} -->|"${inter.type}"| ${to}\n`;
-    });
-
-    try {
-        const { svg } = await mermaid.render('mermaidSvg', mmdCode);
-        document.getElementById('mermaidDiagram').innerHTML = svg;
-    } catch (e) {
-        document.getElementById('mermaidDiagram').innerHTML = `<pre style="color:#94a3b8">${mmdCode}</pre>`;
-    }
-
-    // Load PlantUML source
-    try {
-        const res = await fetch(`/api/results/${data.run_id}/diagram/plantuml`);
-        if (res.ok) {
-            const d = await res.json();
-            document.getElementById('plantumlDiagram').textContent = d.content;
-
-            const diffBox = document.getElementById('plantumlDiff');
-            const diffText = buildLineDiff(previousPlantUmlCode, d.content);
-            if (diffText.trim()) {
-                diffBox.innerHTML = colorizeDiff(diffText);
-                diffBox.classList.remove('hidden');
-            } else {
-                diffBox.textContent = 'No changes from previous diagram iteration.';
-                diffBox.classList.remove('hidden');
-            }
-            previousPlantUmlCode = d.content;
-        }
-    } catch (e) { /* ignore */ }
-}
-
-function buildLineDiff(oldText, newText) {
-    if (!oldText) {
-        return newText
-            .split('\n')
-            .map(line => `+ ${line}`)
-            .join('\n');
-    }
-
-    const oldLines = oldText.split('\n');
-    const newLines = newText.split('\n');
-    const oldSet = new Set(oldLines);
-    const newSet = new Set(newLines);
-    const out = [];
-
-    oldLines.forEach(line => {
-        if (!newSet.has(line)) {
-            out.push(`- ${line}`);
-        }
-    });
-    newLines.forEach(line => {
-        if (!oldSet.has(line)) {
-            out.push(`+ ${line}`);
-        }
-    });
-
-    return out.join('\n');
+    await loadDiagramWorkflow(data.run_id);
 }
 
 function colorizeDiff(diffText) {
@@ -756,20 +684,154 @@ function colorizeDiff(diffText) {
         .split('\n')
         .map(line => {
             const escaped = line.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-            if (line.startsWith('+ ')) return `<span class="diff-added">${escaped}</span>`;
-            if (line.startsWith('- ')) return `<span class="diff-removed">${escaped}</span>`;
+            if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@')) return `<span class="diff-context">${escaped}</span>`;
+            if (line.startsWith('+') && !line.startsWith('+++')) return `<span class="diff-added">${escaped}</span>`;
+            if (line.startsWith('-') && !line.startsWith('---')) return `<span class="diff-removed">${escaped}</span>`;
             return `<span class="diff-context">${escaped}</span>`;
         })
         .join('\n');
 }
 
+function renderDiagramWorkflow(wf) {
+    diagramWorkflow = wf;
+
+    const mermaidDiagram = document.getElementById('mermaidDiagram');
+    const mermaidCode = document.getElementById('mermaidCode');
+    const plantumlPanel = document.getElementById('plantumlPanel');
+
+    // PlantUML panel
+    plantumlPanel.classList.remove('hidden');
+    const pu = (wf && wf.plantuml) ? wf.plantuml : {};
+    const puCur = (pu && pu.current) ? pu.current : {};
+
+    const approved = !!pu.approved;
+    const used = Number(pu.llm_iterations_used || 0);
+    const max = Number(pu.max_llm_iterations || 2);
+
+    document.getElementById('plantumlStatus').textContent = `provider=${wf.provider || 'N/A'} • model=${wf.model || 'N/A'} • approved=${approved} • llm_iterations=${used}/${max}`;
+
+    const metrics = document.getElementById('plantumlMetrics');
+    const cas = Number(puCur.diagram_cas || 0);
+    const b = puCur.breakdown || {};
+    metrics.innerHTML = `
+        <div class="diagram-metric"><div class="k">Diagram_CAS</div><div class="v">${cas.toFixed(4)}</div></div>
+        <div class="diagram-metric"><div class="k">Syntax OK</div><div class="v">${String(!!b.syntax_ok)}</div></div>
+        <div class="diagram-metric"><div class="k">Component Coverage</div><div class="v">${Number(b.component_coverage || 0).toFixed(4)}</div></div>
+        <div class="diagram-metric"><div class="k">Interaction Coverage</div><div class="v">${Number(b.interaction_coverage || 0).toFixed(4)}</div></div>
+        <div class="diagram-metric"><div class="k">Style Alignment</div><div class="v">${Number(b.style_alignment || 0).toFixed(4)}</div></div>
+    `;
+
+    const editor = document.getElementById('plantumlEditor');
+    editor.value = puCur.diagram || '';
+    editor.disabled = approved;
+
+    const diffBox = document.getElementById('plantumlDiff');
+    const diff = (pu.last_diff || '').trim();
+    if (diff) {
+        diffBox.innerHTML = colorizeDiff(diff);
+    } else {
+        diffBox.textContent = 'No diff available yet. Make an edit or request iteration 2.';
+    }
+
+    // Buttons
+    const rescoreBtn = document.getElementById('plantumlRescoreBtn');
+    const improveBtn = document.getElementById('plantumlImproveBtn');
+    const approveBtn = document.getElementById('plantumlApproveBtn');
+
+    rescoreBtn.disabled = approved;
+    improveBtn.disabled = approved || used >= max;
+    approveBtn.disabled = approved;
+    approveBtn.textContent = approved ? 'Approved' : 'Approve PlantUML';
+
+    // Mermaid panel
+    if (!wf.mermaid || !wf.mermaid.generated) {
+        mermaidDiagram.innerHTML = '<div style="color: var(--text-muted); font-size: 14px; text-align:center;">Mermaid is generated only after you approve the PlantUML.</div>';
+        mermaidCode.textContent = '';
+        mermaidCode.classList.add('hidden');
+        return;
+    }
+
+    // Fetch Mermaid source and render + show copyable code
+    fetch(`/api/results/${wf.run_id}/diagram/mermaid`)
+        .then(res => res.ok ? res.json() : null)
+        .then(d => {
+            if (!d || !d.content) return;
+            const mmd = d.content;
+            mermaidCode.textContent = mmd;
+            mermaidCode.classList.remove('hidden');
+            mermaid.render('mermaidSvgApproved', mmd)
+                .then(({ svg }) => { mermaidDiagram.innerHTML = svg; })
+                .catch(() => { mermaidDiagram.innerHTML = `<pre style="color:#94a3b8">${mmd}</pre>`; });
+        });
+}
+
+async function loadDiagramWorkflow(run_id) {
+    try {
+        const res = await fetch(`/api/results/${run_id}/diagram_workflow`);
+        if (!res.ok) {
+            // Workflow should exist after Phase 2, but keep UI resilient.
+            document.getElementById('plantumlPanel').classList.add('hidden');
+            document.getElementById('mermaidDiagram').innerHTML = '<div style="color: var(--text-muted); font-size: 14px; text-align:center;">No diagram workflow found for this run yet.</div>';
+            return;
+        }
+        const wf = await res.json();
+        renderDiagramWorkflow(wf);
+    } catch (e) {
+        console.error('Failed to load diagram workflow', e);
+    }
+}
+
+async function rescorePlantUml() {
+    if (!currentRunId) return;
+    const diagram = document.getElementById('plantumlEditor').value;
+    const res = await fetch(`/api/runs/${currentRunId}/diagram/plantuml/score`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ diagram })
+    });
+    if (res.ok) {
+        const wf = await res.json();
+        renderDiagramWorkflow(wf);
+    }
+}
+
+async function improvePlantUml() {
+    if (!currentRunId) return;
+    const res = await fetch(`/api/runs/${currentRunId}/diagram/plantuml/improve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+    });
+    if (res.ok) {
+        const wf = await res.json();
+        renderDiagramWorkflow(wf);
+    }
+}
+
+async function approvePlantUml() {
+    if (!currentRunId) return;
+    const res = await fetch(`/api/runs/${currentRunId}/diagram/plantuml/approve`, { method: 'POST' });
+    if (res.ok) {
+        const wf = await res.json();
+        renderDiagramWorkflow(wf);
+        showDiagramTab('mermaid');
+    }
+}
+
 function showDiagramTab(tab) {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    event.target.classList.add('active');
+    const buttons = Array.from(document.querySelectorAll('.tab-btn'));
+    buttons.forEach(b => b.classList.remove('active'));
+    const idx = tab === 'plantuml' ? 1 : 0;
+    const targetBtn = buttons[idx];
+    if (targetBtn) targetBtn.classList.add('active');
 
     document.getElementById('mermaidDiagram').classList.toggle('hidden', tab !== 'mermaid');
-    document.getElementById('plantumlDiagram').classList.toggle('hidden', tab !== 'plantuml');
-    document.getElementById('plantumlDiff').classList.toggle('hidden', tab !== 'plantuml');
+    const mermaidCode = document.getElementById('mermaidCode');
+    const shouldShowMermaidCode = tab === 'mermaid' && (mermaidCode.textContent || '').trim().length > 0;
+    mermaidCode.classList.toggle('hidden', !shouldShowMermaidCode);
+
+    document.getElementById('plantumlPanel').classList.toggle('hidden', tab !== 'plantuml');
+    document.getElementById('plantumlDiagram').classList.add('hidden');
 }
 
 // ─── History ─────────────────────────────────

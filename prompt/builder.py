@@ -164,6 +164,140 @@ RESPOND WITH ONLY THE JSON. NO OTHER TEXT.
     return "\n\n".join(parts)
 
 
+def build_diagram_prompt(
+    *,
+    architecture: dict,
+    requirements: dict,
+    diagram_kind: str,
+    title: str,
+    iteration: int,
+    previous_diagram: Optional[str] = None,
+    previous_diagram_cas: Optional[float] = None,
+    feedback_issues: Optional[list[str]] = None,
+    user_feedback: Optional[str] = None,
+    reference_diagram: Optional[str] = None,
+) -> str:
+    """Build a diagram-generation prompt for either Mermaid or PlantUML.
+
+    Constraints:
+    - Output must be ONLY the diagram source (no markdown, no code fences).
+    - Must align diagram structure/layout to the selected architecture style.
+    - Iteration 2 is an explicit improvement pass using deterministic feedback.
+    """
+
+    project_name = requirements.get("project", "System")
+    style = architecture.get("architecture_style", "Architecture")
+    layers = architecture.get("layers", []) or []
+    components = architecture.get("components", []) or []
+    interactions = architecture.get("interactions", []) or []
+
+    def safe_id(s: str) -> str:
+        return (s or "").strip().replace(" ", "_").replace("-", "_")
+
+    layer_lines = []
+    for l in layers:
+        name = (l.get("name", "") or "").strip()
+        order = l.get("order", "")
+        if name:
+            layer_lines.append(f"- L{order}: {name}")
+
+    comp_lines = []
+    for c in components:
+        name = (c.get("name", "") or "").strip()
+        layer = (c.get("layer", "") or "").strip()
+        resp = (c.get("responsibility", "") or "").strip()
+        if name:
+            resp_short = (resp[:120] + "…") if len(resp) > 120 else resp
+            comp_lines.append(f"- {name} (layer={layer}, id={safe_id(name)}): {resp_short}")
+
+    inter_lines = []
+    for i in interactions:
+        f = (i.get("from", "") or "").strip()
+        t = (i.get("to", "") or "").strip()
+        typ = (i.get("type", "") or "").strip()
+        direction = (i.get("direction", "") or "").strip()
+        if f and t:
+            inter_lines.append(f"- {f} -> {t} (type={typ}, direction={direction})")
+
+    # Common role/context
+    role = (
+        "You are a principal software architect and UML/diagramming specialist. "
+        "You produce clear, industry-standard architecture diagrams for engineering and audit stakeholders."
+    )
+
+    context = (
+        f"PROJECT: {project_name}\n"
+        f"TITLE: {title}\n"
+        f"ARCHITECTURE STYLE (MUST ALIGN TO THIS): {style}\n\n"
+        f"LAYERS:\n" + ("\n".join(layer_lines) if layer_lines else "- (none)") + "\n\n"
+        f"COMPONENTS (authoritative list):\n" + ("\n".join(comp_lines) if comp_lines else "- (none)") + "\n\n"
+        f"INTERACTIONS (authoritative list):\n" + ("\n".join(inter_lines) if inter_lines else "- (none)")
+    )
+
+    if reference_diagram:
+        context += (
+            "\n\nREFERENCE DIAGRAM (approved / must stay consistent):\n"
+            + (reference_diagram.strip() + "\n")
+        )
+
+    # Style-alignment rules to make the diagram explicitly match the selected style.
+    style_rules = (
+        "STYLE-SPECIFIC DIAGRAM ALIGNMENT RULES:\n"
+        "- Layered Architecture: group components by layer and keep dependencies mostly downward between adjacent layers.\n"
+        "- Microservices Architecture: show an explicit API Gateway entry point and a Service Registry/Discovery; isolate services as separate groups/packages.\n"
+        "- Event-Driven Architecture: show an explicit Event Bus/Broker; producers/consumers should connect via the broker (avoid direct service-to-service for events).\n"
+        "- Microkernel Architecture: show a Core/Kernel and separate Plugin/Extension modules; plugins depend on the core.\n"
+        "- Space-Based Architecture: show Processing Units and a shared Data Grid/Virtualized Middleware; discourage direct DB coupling in the main flow.\n"
+    )
+
+    if diagram_kind not in {"mermaid", "plantuml"}:
+        raise ValueError(f"Unsupported diagram_kind: {diagram_kind}")
+
+    if diagram_kind == "mermaid":
+        schema = (
+            "OUTPUT FORMAT (Mermaid):\n"
+            "- Output ONLY valid Mermaid source. No markdown. No code fences.\n"
+            "- Use: flowchart TD (or LR).\n"
+            "- Use subgraph blocks for layers when layers exist.\n"
+            "- Use the provided component ids exactly as listed (id=...).\n"
+            "- Draw arrows for ALL interactions; label arrows with the interaction type.\n"
+            "- Keep it simple and readable for a GitHub README.\n"
+        )
+
+    else:
+        schema = (
+            "OUTPUT FORMAT (PlantUML Component Diagram):\n"
+            "- Output ONLY valid PlantUML. No markdown. No code fences.\n"
+            "- MUST include @startuml and @enduml.\n"
+            "- MUST include: skinparam componentStyle rectangle\n"
+            "- Use package blocks for layers (or service boundaries), and place components inside.\n"
+            "- Declare components using: [ComponentName] as ComponentId (where ComponentId is the provided id=...).\n"
+            "- Add dependency arrows for ALL interactions; label arrows with the interaction type (REST/gRPC/Event/etc.).\n"
+            "- Prefer an industry-standard component diagram style (clear boundaries, consistent naming, minimal clutter).\n"
+        )
+
+    improvement = ""
+    if iteration >= 2:
+        issues_txt = "\n".join(f"- {x}" for x in (feedback_issues or [])) or "- (no issues provided)"
+        prev_score_txt = f"{previous_diagram_cas:.4f}" if previous_diagram_cas is not None else "(not provided)"
+        extra_user_feedback = (user_feedback or "").strip()
+        user_feedback_block = f"\nUSER NOTES:\n{extra_user_feedback}\n" if extra_user_feedback else ""
+        improvement = (
+            "\nITERATION 2 (IMPROVEMENT PASS):\n"
+            f"- Previous Diagram_CAS: {prev_score_txt}\n"
+            "- You MUST improve the diagram by fixing the issues below while keeping it valid.\n"
+            "- Do not remove correct content; prefer adding missing components/interactions and adding missing style structure.\n"
+            "- Even if the issue list looks small, do a strict compliance pass: ensure EVERY interaction is present and labeled, and the diagram structure clearly reflects the selected architecture style.\n"
+            "ISSUES TO FIX:\n"
+            f"{issues_txt}\n\n"
+            f"{user_feedback_block}\n"
+            "PREVIOUS DIAGRAM (for editing):\n"
+            f"{previous_diagram or ''}\n"
+        )
+
+    return "\n\n".join([role, context, style_rules, schema, improvement]).strip() + "\n"
+
+
 def build_feedback_from_scores(scores: dict, thresholds: dict) -> str:
     """
     Build a targeted feedback string from metric scores that fell below thresholds.

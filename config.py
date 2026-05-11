@@ -60,6 +60,16 @@ GENERATION_OPTIONS = {
     "seed": 42,
 }
 
+# Diagram generation (LLM)
+# These options intentionally favor low-variance, reproducible outputs.
+DIAGRAM_MAX_ITERATIONS = int(os.getenv("DIAGRAM_MAX_ITERATIONS", "2"))
+DIAGRAM_GENERATION_OPTIONS = {
+    "temperature": float(os.getenv("DIAGRAM_TEMPERATURE", "0.1")),
+    "max_tokens": int(os.getenv("DIAGRAM_MAX_TOKENS", "2500")),
+    "top_p": float(os.getenv("DIAGRAM_TOP_P", "0.2")),
+    "seed": int(os.getenv("DIAGRAM_SEED", "42")),
+}
+
 # Retry configuration
 MAX_GENERATION_RETRIES = 3
 MAX_REGENERATION_LOOPS = 0  # Disabled: using Human-in-the-Loop manual iteration

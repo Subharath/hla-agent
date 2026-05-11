@@ -211,9 +211,35 @@
                 <button class="tab-btn" onclick="showDiagramTab('plantuml')">PlantUML</button>
             </div>
             <div class="card glass-card">
+                <!-- Mermaid (generated ONLY after PlantUML approval) -->
                 <div id="mermaidDiagram" class="diagram-view"></div>
+                <pre id="mermaidCode" class="diagram-code hidden"></pre>
+
+                <!-- PlantUML workflow (manual iteration) -->
+                <div id="plantumlPanel" class="hidden">
+                    <div class="diagram-workflow-header">
+                        <div>
+                            <div class="diagram-workflow-title">PlantUML — Manual Iteration</div>
+                            <div class="diagram-workflow-sub" id="plantumlStatus"></div>
+                        </div>
+                        <div class="diagram-workflow-actions">
+                            <button class="run-btn" id="plantumlRescoreBtn" onclick="rescorePlantUml()">Rescore</button>
+                            <button class="run-btn" id="plantumlImproveBtn" onclick="improvePlantUml()">Ask LLM (Iteration 2)</button>
+                            <button class="run-btn" id="plantumlApproveBtn" onclick="approvePlantUml()">Approve PlantUML</button>
+                        </div>
+                    </div>
+
+                    <div class="diagram-metrics" id="plantumlMetrics"></div>
+
+                    <label class="diagram-label" for="plantumlEditor">PlantUML Source (editable)</label>
+                    <textarea id="plantumlEditor" class="diagram-editor" spellcheck="false"></textarea>
+
+                    <label class="diagram-label" for="plantumlDiff">Diff (previous → current)</label>
+                    <pre id="plantumlDiff" class="diagram-diff"></pre>
+                </div>
+
+                <!-- Back-compat (kept hidden) -->
                 <pre id="plantumlDiagram" class="diagram-code hidden"></pre>
-                <pre id="plantumlDiff" class="diagram-diff hidden"></pre>
             </div>
         </section>
 

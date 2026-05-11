@@ -8,7 +8,7 @@ from datetime import datetime
 
 
 def generate_report(ranked_candidates: list, requirements: dict,
-                    run_id: str = "") -> str:
+                    run_id: str = "", diagram_meta: dict | None = None) -> str:
     """
     Generate a full Markdown evaluation report.
 
@@ -85,6 +85,87 @@ def generate_report(ranked_candidates: list, requirements: dict,
                 f"| {comp.get('responsibility', '')} |"
             )
         lines.append("")
+
+    # === Diagram Evidence (optional) ===
+    if diagram_meta and diagram_meta.get("diagram_workflow"):
+        wf = diagram_meta.get("diagram_workflow") or {}
+        pu = (wf.get("plantuml") or {})
+        mm = (wf.get("mermaid") or {})
+        cur = (pu.get("current") or {})
+
+        lines.append("---")
+        lines.append("")
+        lines.append("## 🧩 Diagram Workflow (Manual PlantUML → Approve → Mermaid)")
+        lines.append("")
+        lines.append(f"- **PlantUML Approved:** {str(bool(pu.get('approved')))}")
+        lines.append(f"- **LLM Iterations Used:** {pu.get('llm_iterations_used', 'N/A')} / {pu.get('max_llm_iterations', 'N/A')}")
+        if cur:
+            lines.append(f"- **Current PlantUML Diagram_CAS:** {cur.get('diagram_cas', 0):.4f}")
+            b = (cur.get("breakdown") or {})
+            lines.append(
+                f"- **PlantUML Breakdown:** syntax_ok={b.get('syntax_ok', False)} | "
+                f"component_cov={b.get('component_coverage', 0):.4f} | "
+                f"interaction_cov={b.get('interaction_coverage', 0):.4f} | "
+                f"style_align={b.get('style_alignment', 0):.4f}"
+            )
+        lines.append("")
+
+        if not bool(mm.get("generated")):
+            lines.append("- **Mermaid:** Pending (generated only after PlantUML approval)")
+        else:
+            mcur = (mm.get("current") or {})
+            lines.append(f"- **Mermaid Generated:** True (Diagram_CAS={mcur.get('diagram_cas', 0):.4f})")
+        lines.append("")
+
+    elif diagram_meta:
+        lines.append("---")
+        lines.append("")
+        lines.append("## 🧩 Diagram Generation (LLM, max 2 iterations)")
+        lines.append("")
+        lines.append(
+            "This section reports *diagram* iteration quality signals. "
+            "`Diagram_CAS` is a deterministic proxy score (coverage + style-alignment + syntax), "
+            "and is separate from the architecture CAS."
+        )
+        lines.append("")
+
+        for kind in ["mermaid", "plantuml"]:
+            if kind not in diagram_meta:
+                continue
+
+            info = diagram_meta.get(kind, {}) or {}
+            final = info.get("final", {}) or {}
+            attempts = info.get("attempts", []) or []
+
+            lines.append(f"### {kind.title()}")
+            lines.append("")
+            lines.append(f"- **Model:** {info.get('model', 'N/A')}")
+            lines.append(f"- **Provider:** {info.get('provider', 'N/A')}")
+            lines.append(f"- **Final Diagram_CAS:** {final.get('diagram_cas', 0):.4f}")
+            lines.append("")
+
+            if attempts:
+                lines.append("| Iteration | Diagram_CAS | Syntax OK | Component Cov | Interaction Cov | Style Align |")
+                lines.append("|-----------|------------|-----------|---------------|----------------|-------------|")
+                for a in attempts:
+                    b = (a.get("breakdown", {}) or {})
+                    lines.append(
+                        f"| {a.get('iteration', '?')} | {a.get('diagram_cas', 0):.4f} "
+                        f"| {str(b.get('syntax_ok', False))} "
+                        f"| {b.get('component_coverage', 0):.4f} "
+                        f"| {b.get('interaction_coverage', 0):.4f} "
+                        f"| {b.get('style_alignment', 0):.4f} |"
+                    )
+                lines.append("")
+
+            diff_text = (info.get("diff", "") or "").strip("\n")
+            if diff_text:
+                lines.append(f"#### {kind.title()} — Iteration Diff (v1 → v2)")
+                lines.append("")
+                lines.append("```diff")
+                lines.append(diff_text)
+                lines.append("```")
+                lines.append("")
 
     # === Metric Details ===
     lines.append("---")
