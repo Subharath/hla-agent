@@ -18,6 +18,7 @@ build/
 
 # Results (generated at runtime)
 results/
+docs/
 
 # OS
 Thumbs.db
